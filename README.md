@@ -59,4 +59,4 @@ This project is configured to deploy to GitHub Pages.
         }
         ```
     *   Run the deploy script: `npm run deploy`
-4.  Configure your repository's GitHub Pages settings to deploy from the `gh-pages` branch. 
+4.  Configure your repository's GitHub Pages settings to deploy from the `gh-pages` branch.
