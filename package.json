@@ -1,0 +1,20 @@
+{
+  "name": "piepacker",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "deploy": "npm run build && gh-pages -d dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.2",
+    "vite": "^6.2.5",
+    "gh-pages": "^6.1.1"
+  },
+  "dependencies": {
+    "phaser": "^3.70.0"
+  }
+}
