@@ -45,7 +45,6 @@ class Main extends Phaser.Scene {
   private readonly WALL_OFFSET = 65;
   private readonly MERGE_ZONE_START_Y = 200;
   private readonly MAX_CEILING_TOUCHES = 10;
-  private readonly GAUGE_SEGMENTS = 10; // Should match MAX_CEILING_TOUCHES
   private readonly INITIAL_DROPPER_RANGE_MAX_INDEX = 7;
   private readonly SCORE_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
     fontFamily: 'sans-serif',
@@ -83,9 +82,21 @@ class Main extends Phaser.Scene {
       strokeThickness: 3,
       align: 'center'
   };
-  private readonly GAUGE_INACTIVE_COLOR = 0xffffff;
-  private readonly GAUGE_INACTIVE_ALPHA = 0.3;
-  private readonly GAUGE_TWEEN_DURATION = 150;
+  private readonly COUNTER_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
+      fontFamily: 'sans-serif',
+      fontSize: '48px',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 3
+  };
+  private readonly COUNTER_CIRCLE_RADIUS = 30;
+  private readonly COLOR_GREEN = 0x00ff00;
+  private readonly COLOR_RED = 0xff0000;
+  private readonly INDICATOR_COLORS = [
+    0x3EB24A, 0x7CC242, 0x9DCB3B, 0xC4D92E, 0xE7E621, 
+    0xF5EB02, 0xF5C913, 0xF6951E, 0xF15B22, 0xE92A28
+  ];
+  private readonly STABLE_TOUCH_DURATION = 250; // ms duration for a touch to count
 
   // --- State & Game Objects ---
   score = 0;
@@ -104,16 +115,14 @@ class Main extends Phaser.Scene {
   muteButtonContainer!: Phaser.GameObjects.Container; // Keep commented out usage later
   restartButtonContainer!: Phaser.GameObjects.Container; // Keep commented out usage later
   droppablePieIndices: number[] = [0, 1, 2, 3, 4, 5, 6, 7];
-  // wallOffset defined as constant WALL_OFFSET
   ceilingBody!: MatterJS.BodyType;
   boundsGraphics!: Phaser.GameObjects.Graphics;
   ceilingSensorBody!: MatterJS.BodyType;
-  piesTouchingCeilingThisFrame: Set<number> = new Set();
-  gaugeColors: number[] = [];
-  ceilingGaugeSegments: Phaser.GameObjects.Graphics[] = [];
-
-  // --- TESTING: Property to track next pie index ---
-  private _nextDropIndex = 0;
+  _ceilingTouchTimers = new Map<number, number>(); // ADDED: bodyId -> touchStartTime
+  ceilingBarGraphics!: Phaser.GameObjects.Graphics;
+  ceilingCounterText!: Phaser.GameObjects.Text;
+  ceilingCounterBg!: Phaser.GameObjects.Graphics;
+  _currentDisplayedCeilingCount = 0;
 
   // --- Lifecycle Methods ---
   preload() {
@@ -142,9 +151,8 @@ class Main extends Phaser.Scene {
   update(/* REMOVED commented-out parameters */) {
     if (this.gameOver) return;
 
-    this._updateCeilingGauge();
+    this._updateUIIndicators();
     this._checkGameOverCondition();
-    this._clearFrameState();
     this._redrawBoundaries(); // Optional: Could be removed if static
   }
 
@@ -473,7 +481,6 @@ class Main extends Phaser.Scene {
     this.isDropping = false;
     this.isAnnouncing = false;
     this.announcedPieIndices.clear();
-    this.piesTouchingCeilingThisFrame.clear();
     this.availableTemplates = [...announcementTemplates];
     Phaser.Utils.Array.Shuffle(this.availableTemplates);
     this.score = 0; // Reset score if restarting scene
@@ -520,24 +527,21 @@ class Main extends Phaser.Scene {
     this.scoreText = this.add.text(this.WALL_OFFSET + 10, 100, '0', this.SCORE_TEXT_STYLE)
         .setOrigin(0, 0.5).setDepth(10);
 
-    // Ceiling Gauge
-    const hexColors = ['3EB24A', '7CC242', '9DCB3B', 'C4D92E', 'E7E621', 'F5EB02', 'F5C913', 'F6951E', 'F15B22', 'E92A28'];
-    this.gaugeColors = hexColors.map(hex => Phaser.Display.Color.HexStringToColor(hex).color);
-    const totalGaugeWidth = (+this.game.config.width - this.WALL_OFFSET * 2);
-    const segmentWidth = totalGaugeWidth / this.GAUGE_SEGMENTS;
-    const segmentHeight = 5;
-    this.ceilingGaugeSegments = []; // Clear existing segments if restarting
-    for (let i = 0; i < this.GAUGE_SEGMENTS; i++) {
-        const segmentX = this.WALL_OFFSET + i * segmentWidth;
-        const segmentGraphics = this.add.graphics({ x: segmentX, y: this.CEILING_Y - segmentHeight / 2 });
-        segmentGraphics.setData('activeColor', this.gaugeColors[i]);
-        segmentGraphics.setData('isActive', false);
-        segmentGraphics.fillStyle(this.GAUGE_INACTIVE_COLOR, this.GAUGE_INACTIVE_ALPHA);
-        segmentGraphics.fillRect(0, 0, segmentWidth, segmentHeight);
-        segmentGraphics.setDepth(10);
-        segmentGraphics.setAlpha(this.GAUGE_INACTIVE_ALPHA);
-        this.ceilingGaugeSegments.push(segmentGraphics);
-    }
+    // --- NEW Ceiling Bar --- 
+    this.ceilingBarGraphics = this.add.graphics({ x: this.WALL_OFFSET, y: this.CEILING_Y - 2.5 }); // Positioned at ceiling line
+    this.ceilingBarGraphics.setDepth(10); // Same depth as score
+    // Initial draw will happen in _initializeGaugeState (renaming it soon)
+
+    // --- NEW Ceiling Counter --- 
+    const counterX = +this.game.config.width - this.WALL_OFFSET - this.COUNTER_CIRCLE_RADIUS - 10; // Position top-right
+    const counterY = this.CEILING_Y - 30; // Position slightly above ceiling line
+    // Background Circle
+    this.ceilingCounterBg = this.add.graphics({ x: counterX, y: counterY });
+    this.ceilingCounterBg.setDepth(10);
+    // Counter Text
+    this.ceilingCounterText = this.add.text(counterX, counterY, '0', this.COUNTER_TEXT_STYLE)
+        .setOrigin(0.5).setDepth(11); // Slightly above background
+    // Initial colors set in _initializeGaugeState
 
     // Game Over Text (Hidden)
     this.gameOverText = this.add.text(
@@ -667,9 +671,11 @@ class Main extends Phaser.Scene {
   private _setupCollisionListeners() {
       this.matter.world.on('collisionactive', this._handleCollisionActive, this);
       this.matter.world.on("collisionstart", this._handleCollisionStart, this);
+      this.matter.world.on('collisionend', this._handleCollisionEnd, this); // ADDED listener
   }
 
   private _handleCollisionActive(event: Phaser.Physics.Matter.Events.CollisionActiveEvent) {
+      const currentTime = this.time.now;
       for (const pair of event.pairs) {
           let pieBody: MatterJS.BodyType | null = null;
           if (pair.bodyA === this.ceilingSensorBody && pair.bodyB.gameObject instanceof Phaser.Physics.Matter.Image) {
@@ -677,8 +683,11 @@ class Main extends Phaser.Scene {
           } else if (pair.bodyB === this.ceilingSensorBody && pair.bodyA.gameObject instanceof Phaser.Physics.Matter.Image) {
               pieBody = pair.bodyA;
           }
-          if (pieBody && pieBody.gameObject && this.group.contains(pieBody.gameObject as Phaser.GameObjects.GameObject) && pieBody.gameObject.getData('isNew') !== true) {
-              this.piesTouchingCeilingThisFrame.add(pieBody.id);
+          // If a valid pie is touching and NOT already tracked, add it with the current time
+          if (pieBody && pieBody.gameObject && this.group.contains(pieBody.gameObject as Phaser.GameObjects.GameObject)) {
+              if (!this._ceilingTouchTimers.has(pieBody.id)) {
+                  this._ceilingTouchTimers.set(pieBody.id, currentTime);
+              }
           }
       }
   }
@@ -704,11 +713,11 @@ class Main extends Phaser.Scene {
                   if (newPieObject) { newPieObject.setData('isNew', false); }
               }
 
-              // Check for merge condition - RESTORING
+              // Check for merge condition - RE-ENABLING
               if (gameObjectA.name === gameObjectB.name &&
                   this.group.contains(gameObjectA) && this.group.contains(gameObjectB) &&
-                  !gameObjectA.getData('isMerging') && !gameObjectB.getData('isMerging') &&
-                  pair.collision.supports.length > 0 && pair.collision.supports[0].y > this.MERGE_ZONE_START_Y)
+                  !gameObjectA.getData('isMerging') && !gameObjectB.getData('isMerging')
+                 )
               {
                   const pieIndex = pies.findIndex((pie) => pie.name === gameObjectA.name);
                   gameObjectA.setData('isMerging', true);
@@ -730,6 +739,22 @@ class Main extends Phaser.Scene {
                      this.drawScore();
                   }
               }
+          }
+      }
+  }
+
+  private _handleCollisionEnd(event: Phaser.Physics.Matter.Events.CollisionEndEvent) {
+      for (const pair of event.pairs) {
+          let pieBodyId: number | null = null;
+          // Check if either body involved was the sensor and the other potentially a pie
+          if (pair.bodyA === this.ceilingSensorBody && pair.bodyB.gameObject instanceof Phaser.Physics.Matter.Image) {
+              pieBodyId = pair.bodyB.id;
+          } else if (pair.bodyB === this.ceilingSensorBody && pair.bodyA.gameObject instanceof Phaser.Physics.Matter.Image) {
+              pieBodyId = pair.bodyA.id;
+          }
+          // If a tracked pie stopped touching the sensor, remove it from the timer map
+          if (pieBodyId !== null && this._ceilingTouchTimers.has(pieBodyId)) {
+              this._ceilingTouchTimers.delete(pieBodyId);
           }
       }
   }
@@ -763,62 +788,83 @@ class Main extends Phaser.Scene {
     });
   }
 
-  private _initializeGaugeState() {
+  private _initializeGaugeState() { // Rename this method
     // Initial score draw is needed after scoreText is created
     this.drawScore();
-    // Ensure gauge starts inactive
-    this.ceilingGaugeSegments.forEach(segment => {
-        segment.clear();
-        segment.fillStyle(this.GAUGE_INACTIVE_COLOR, this.GAUGE_INACTIVE_ALPHA);
-        const segmentWidth = (+this.game.config.width - this.WALL_OFFSET * 2) / this.GAUGE_SEGMENTS;
-        const segmentHeight = 5;
-        segment.fillRect(0, 0, segmentWidth, segmentHeight);
-        segment.setAlpha(this.GAUGE_INACTIVE_ALPHA);
-        segment.setData('isActive', false);
-    });
+    // Reset displayed count
+    this._currentDisplayedCeilingCount = 0;
+    // Initialize ceiling bar (inactive/green)
+    this.ceilingBarGraphics.clear();
+    this.ceilingBarGraphics.fillStyle(this.COLOR_GREEN, 1);
+    const barWidth = (+this.game.config.width - this.WALL_OFFSET * 2);
+    const barHeight = 5;
+    this.ceilingBarGraphics.fillRect(0, 0, barWidth, barHeight);
+    // Initialize counter (inactive/green)
+    this.ceilingCounterText.setText('0');
+    this.ceilingCounterBg.clear();
+    this.ceilingCounterBg.fillStyle(this.COLOR_GREEN, 1);
+    this.ceilingCounterBg.fillCircle(0, 0, this.COUNTER_CIRCLE_RADIUS);
   }
 
-  private _updateCeilingGauge() {
-      const ceilingTouchCount = this.piesTouchingCeilingThisFrame.size;
+  private _updateUIIndicators() {
+      const currentTime = this.time.now;
+      let stableTouchCount = 0;
 
-      this.ceilingGaugeSegments.forEach((segmentGraphics, index) => {
-          const shouldBeActive = index < ceilingTouchCount;
-          const currentlyActive = segmentGraphics.getData('isActive');
-          const activeColor = segmentGraphics.getData('activeColor');
-          const targetColor = shouldBeActive ? activeColor : this.GAUGE_INACTIVE_COLOR;
-          const targetAlpha = shouldBeActive ? 1 : this.GAUGE_INACTIVE_ALPHA;
+      // Count pies touching for the required duration
+      for (const [bodyId, touchStartTime] of this._ceilingTouchTimers.entries()) {
+           if (currentTime - touchStartTime >= this.STABLE_TOUCH_DURATION) {
+              stableTouchCount++;
+           }
+           // Optional: Clean up entries for bodies that no longer exist (e.g., merged away)
+           // This requires getting the body/gameObject from bodyId, which can be tricky.
+           // Let's assume for now that collisionend handles most cleanup.
+      }
 
-          // Redraw needed to change color
-          segmentGraphics.clear();
-          segmentGraphics.fillStyle(targetColor, segmentGraphics.alpha); // Use current alpha for redraw during tween
-          const segmentWidth = (+this.game.config.width - this.WALL_OFFSET * 2) / this.GAUGE_SEGMENTS;
-          const segmentHeight = 5;
-          segmentGraphics.fillRect(0, 0, segmentWidth, segmentHeight);
-          segmentGraphics.setData('isActive', shouldBeActive);
+      // --- DEBUG LOGGING --- 
+      // console.log(`Timers: ${this._ceilingTouchTimers.size}, Stable: ${stableTouchCount}, Displayed: ${this._currentDisplayedCeilingCount}`);
 
-          // Tween alpha if state changed
-          if (shouldBeActive !== currentlyActive) {
-              this.tweens.add({
-                  targets: segmentGraphics,
-                  alpha: targetAlpha,
-                  duration: this.GAUGE_TWEEN_DURATION,
-                  ease: 'Linear'
-              });
-          }
-      });
+      // High-water mark logic based on STABLE touches
+      if (stableTouchCount > this._currentDisplayedCeilingCount) {
+          this._currentDisplayedCeilingCount = stableTouchCount;
+      } else if (this._ceilingTouchTimers.size === 0) { // Reset only if map is EMPTY
+          this._currentDisplayedCeilingCount = 0;
+      }
+
+      // Determine the display color based on the stable count
+      let finalColor: number;
+      if (this._currentDisplayedCeilingCount === 0) {
+          finalColor = this.COLOR_GREEN;
+      } else {
+          // Map count 1-10 to array index 0-9
+          const colorIndex = Phaser.Math.Clamp(this._currentDisplayedCeilingCount - 1, 0, this.INDICATOR_COLORS.length - 1);
+          finalColor = this.INDICATOR_COLORS[colorIndex];
+      }
+
+      // --- DEBUG LOGGING --- 
+      // console.log(`Final Count: ${this._currentDisplayedCeilingCount}, Color Index: ${colorIndex}, Color: ${finalColor.toString(16)}`);
+
+      // Update Ceiling Bar color
+      this.ceilingBarGraphics.clear();
+      this.ceilingBarGraphics.fillStyle(finalColor, 1); // Use selected discrete color
+      const barWidth = (+this.game.config.width - this.WALL_OFFSET * 2);
+      const barHeight = 5;
+      this.ceilingBarGraphics.fillRect(0, 0, barWidth, barHeight);
+
+      // Update Counter Text using the stable count
+      this.ceilingCounterText.setText(this._currentDisplayedCeilingCount.toString());
+
+      // Update Counter Background color
+      this.ceilingCounterBg.clear();
+      this.ceilingCounterBg.fillStyle(finalColor, 1); // Use selected discrete color
+      this.ceilingCounterBg.fillCircle(0, 0, this.COUNTER_CIRCLE_RADIUS);
   }
 
   private _checkGameOverCondition() {
-      const ceilingTouchCount = this.piesTouchingCeilingThisFrame.size;
-      if (ceilingTouchCount >= this.MAX_CEILING_TOUCHES) {
-          console.log(`Game Over: Ceiling touch count reached ${ceilingTouchCount}`);
+      // Game over check now uses the stable displayed count
+      if (this._currentDisplayedCeilingCount >= this.MAX_CEILING_TOUCHES) {
+          console.log(`Game Over: Stable ceiling touch count reached ${this._currentDisplayedCeilingCount}`);
           this.triggerGameOver();
       }
-  }
-
-  private _clearFrameState() {
-      // Clear the set for the next frame's collision checks
-      this.piesTouchingCeilingThisFrame.clear();
   }
 
   private _redrawBoundaries() {
