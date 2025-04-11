@@ -911,13 +911,11 @@ class Main extends Phaser.Scene {
     }
 
   private _handleResize() {
-      const displayWidth = this.scale.displaySize.width;
-      // const displayHeight = this.scale.displaySize.height; // Not strictly needed for this logic
       const camera = this.cameras.main;
 
       // Position Title
       if (this.titleText) {
-          const titlePaddingTop = 25; // Pixels from the top edge of camera view
+          const titlePaddingTop = 25;
           this.titleText.setPosition(
               camera.worldView.centerX, 
               camera.worldView.y + titlePaddingTop
@@ -926,16 +924,13 @@ class Main extends Phaser.Scene {
       
       // Position Score Text
       if (this.scoreText) {
-         const scorePaddingLeft = 10; // Pixels from left edge of camera view
-         const scoreY = camera.worldView.y + 100; // Position below title relative to camera top
+         const scorePaddingLeft = 10;
+         const scoreY = camera.worldView.y + 100;
          this.scoreText.setPosition(
-            camera.worldView.x + this.WALL_OFFSET + scorePaddingLeft, // Keep wall offset relative to world
+            camera.worldView.x + this.WALL_OFFSET + scorePaddingLeft, 
             scoreY
          );
       }
-
-      // Note: Ceiling Counter remains relative to game world coords (CEILING_Y)
-      // If needed, Play Again button and Final Score could also be positioned relative to camera center/bottom
   }
 
 } // End of Main Scene
