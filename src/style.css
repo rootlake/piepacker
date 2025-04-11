@@ -15,7 +15,7 @@ body {
   background-color: #f0f0f0; /* Fallback background color */
 
   /* Apply background image to body */
-  background-image: url('assets/images/counter_bg.png');
+  background-image: url('/assets/images/counter_bg.png');
   background-size: cover; /* Scale to cover the entire viewport */
   background-position: center center; /* Center the image */
   background-repeat: no-repeat;
