@@ -41,7 +41,7 @@ class Main extends Phaser.Scene {
   private readonly INITIAL_DROPPER_RANGE_MAX_INDEX = 7;
   private readonly SCORE_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
     fontFamily: 'sans-serif',
-    fontSize: '80px',
+    fontSize: '56px',
     color: '#ffffff',
     stroke: '#000000',
     strokeThickness: 6
@@ -115,7 +115,6 @@ class Main extends Phaser.Scene {
   ceilingCounterText!: Phaser.GameObjects.Text;
   ceilingCounterBg!: Phaser.GameObjects.Graphics;
   _currentDisplayedCeilingCount = 0;
-  titleText!: Phaser.GameObjects.Text; // ADDED simple title text property
 
   // --- Lifecycle Methods ---
   preload() {
@@ -523,14 +522,6 @@ class Main extends Phaser.Scene {
   }
 
   private _createUIElements() {
-    // --- Centered Title (Simple) ---
-    const titleX = +this.game.config.width / 2; // Center X
-    // const titleY = 25; // Positioned dynamically
-    this.titleText = this.add.text(titleX, 0, "PiePacker!", this.SCORE_TEXT_STYLE) // Assign to property, start Y at 0
-      .setOrigin(0.5) // Center align text
-      .setDepth(10);
-    // --- End Title ---
-
     // Boundary Lines
     this.boundsGraphics = this.add.graphics();
     this._redrawBoundaries(); // Initial draw
@@ -617,7 +608,12 @@ class Main extends Phaser.Scene {
   private _handlePointerUp(pointer: Phaser.Input.Pointer) {
       // Resume Audio Context
       if (this.sound instanceof Phaser.Sound.WebAudioSoundManager && this.sound.context.state === 'suspended') {
-        this.sound.context.resume();
+        console.log("Attempting to resume AudioContext...");
+        this.sound.context.resume().then(() => {
+            console.log("AudioContext Resumed Successfully!");
+        }).catch(e => {
+            console.error("AudioContext Resume Failed:", e);
+        });
       }
 
       // Input validation
@@ -912,20 +908,11 @@ class Main extends Phaser.Scene {
 
   private _handleResize() {
       const camera = this.cameras.main;
-
-      // Position Title
-      if (this.titleText) {
-          const titlePaddingTop = 25;
-          this.titleText.setPosition(
-              camera.worldView.centerX, 
-              camera.worldView.y + titlePaddingTop
-          );
-      }
       
       // Position Score Text
       if (this.scoreText) {
          const scorePaddingLeft = 10;
-         const scoreY = camera.worldView.y + 100;
+         const scoreY = this.CEILING_Y - 30; 
          this.scoreText.setPosition(
             camera.worldView.x + this.WALL_OFFSET + scorePaddingLeft, 
             scoreY
