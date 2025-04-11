@@ -6,12 +6,6 @@ import Phaser, { Types } from 'phaser';
 import { announcementTemplates } from './announcements'; // Import the templates
 import { Pie, pies } from './pies'; // Import pie data
 
-// REMOVED Pie interface definition (moved to pies.ts)
-// interface Pie {
-//   name: string;
-//   radius: number;
-//   assetKey: string;
-// }
 
 // Physics configuration type for Matter.js bodies
 type PhysicsConfig = {
@@ -43,15 +37,14 @@ class Main extends Phaser.Scene {
   private readonly CEILING_Y = 150;
   private readonly FLOOR_Y = 900;
   private readonly WALL_OFFSET = 65;
-  private readonly MERGE_ZONE_START_Y = 200;
   private readonly MAX_CEILING_TOUCHES = 10;
   private readonly INITIAL_DROPPER_RANGE_MAX_INDEX = 7;
   private readonly SCORE_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
     fontFamily: 'sans-serif',
-    fontSize: '64px',
+    fontSize: '80px',
     color: '#ffffff',
     stroke: '#000000',
-    strokeThickness: 4
+    strokeThickness: 6
   };
   private readonly GAME_OVER_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
     fontFamily: '"Arial Black", Gadget, sans-serif',
@@ -84,14 +77,13 @@ class Main extends Phaser.Scene {
   };
   private readonly COUNTER_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
       fontFamily: 'sans-serif',
-      fontSize: '48px',
+      fontSize: '56px',
       color: '#ffffff',
       stroke: '#000000',
       strokeThickness: 3
   };
   private readonly COUNTER_CIRCLE_RADIUS = 30;
   private readonly COLOR_GREEN = 0x00ff00;
-  private readonly COLOR_RED = 0xff0000;
   private readonly INDICATOR_COLORS = [
     0x3EB24A, 0x7CC242, 0x9DCB3B, 0xC4D92E, 0xE7E621, 
     0xF5EB02, 0xF5C913, 0xF6951E, 0xF15B22, 0xE92A28
@@ -123,6 +115,7 @@ class Main extends Phaser.Scene {
   ceilingCounterText!: Phaser.GameObjects.Text;
   ceilingCounterBg!: Phaser.GameObjects.Graphics;
   _currentDisplayedCeilingCount = 0;
+  titleText!: Phaser.GameObjects.Text; // ADDED simple title text property
 
   // --- Lifecycle Methods ---
   preload() {
@@ -133,6 +126,12 @@ class Main extends Phaser.Scene {
     this.load.audio('squish', ['assets/sounds/squish1.ogg', 'assets/sounds/squish1.aac']);
     this.load.audio('merge', ['assets/sounds/merge1.ogg', 'assets/sounds/merge1.aac']);
     this.load.audio('wompwomp', ['assets/sounds/wompwomp.ogg', 'assets/sounds/wompwomp.aac']);
+    this.load.audio('pop1', ['assets/sounds/pop1.ogg', 'assets/sounds/pop1.aac']);
+    this.load.audio('pop2', ['assets/sounds/pop2.ogg', 'assets/sounds/pop2.aac']); 
+    this.load.audio('pop3', ['assets/sounds/pop3.ogg', 'assets/sounds/pop3.aac']);
+    this.load.audio('pop4', ['assets/sounds/pop4.ogg', 'assets/sounds/pop4.aac']);
+    this.load.audio('pop5', ['assets/sounds/pop5.ogg', 'assets/sounds/pop5.aac']);
+    this.load.audio('pop6', ['assets/sounds/pop6.ogg', 'assets/sounds/pop6.aac']);
   }
 
   create() {
@@ -146,6 +145,10 @@ class Main extends Phaser.Scene {
     // Initial state setup that needs objects to exist
     this._initializeDropperState();
     this._initializeGaugeState(); // Includes initial score draw
+
+    // Re-add Resize Handling
+    this.scale.on('resize', this._handleResize, this);
+    this._handleResize(); // Call once initially to position elements
   }
 
   update(/* REMOVED commented-out parameters */) {
@@ -388,6 +391,7 @@ class Main extends Phaser.Scene {
                 // Explode Tween
                 const targetX = matterPieObject.x + Phaser.Math.RND.between(-1500, 1500); // Fly further out
                 const targetY = matterPieObject.y + Phaser.Math.RND.between(-1500, 1500);
+                
                 const explodeTween = this.tweens.add({
                     targets: matterPieObject,
                     x: targetX,
@@ -519,6 +523,14 @@ class Main extends Phaser.Scene {
   }
 
   private _createUIElements() {
+    // --- Centered Title (Simple) ---
+    const titleX = +this.game.config.width / 2; // Center X
+    // const titleY = 25; // Positioned dynamically
+    this.titleText = this.add.text(titleX, 0, "PiePacker!", this.SCORE_TEXT_STYLE) // Assign to property, start Y at 0
+      .setOrigin(0.5) // Center align text
+      .setDepth(10);
+    // --- End Title ---
+
     // Boundary Lines
     this.boundsGraphics = this.add.graphics();
     this._redrawBoundaries(); // Initial draw
@@ -533,8 +545,8 @@ class Main extends Phaser.Scene {
     // Initial draw will happen in _initializeGaugeState (renaming it soon)
 
     // --- NEW Ceiling Counter --- 
-    const counterX = +this.game.config.width - this.WALL_OFFSET - this.COUNTER_CIRCLE_RADIUS - 10; // Position top-right
-    const counterY = this.CEILING_Y - 30; // Position slightly above ceiling line
+    const counterX = +this.game.config.width - this.WALL_OFFSET - this.COUNTER_CIRCLE_RADIUS - 10; // Position top-right (Restored)
+    const counterY = this.CEILING_Y - 30; // Position slightly above ceiling line (Restored)
     // Background Circle
     this.ceilingCounterBg = this.add.graphics({ x: counterX, y: counterY });
     this.ceilingCounterBg.setDepth(10);
@@ -707,7 +719,7 @@ class Main extends Phaser.Scene {
 
               // Play squish sound on first contact if one is new
               if (isANew !== isBNew) {
-                  this.sound.play('squish', { volume: 0.5 });
+                  // this.sound.play('squish', { volume: 0.5 }); // DISABLED temporarily
                   // Restore original location of setData call:
                   let newPieObject = isANew ? gameObjectA : gameObjectB;
                   if (newPieObject) { newPieObject.setData('isNew', false); }
@@ -725,18 +737,24 @@ class Main extends Phaser.Scene {
 
                   if (pieIndex < pies.length - 1) { // Not largest pie
                       const nextPie = pies[pieIndex + 1];
-                      this.sound.play('merge', { volume: 0.6 });
+                      const soundKey = 'pop3'; 
+                      // Calculate detune based on pie size (index 0 = highest pitch, index max = lowest)
+                      const maxDetune = 600; // Max detune in cents (+/- 6 semitones)
+                      const progress = pieIndex / (pies.length - 2); // 0 to 1 based on index
+                      const detuneValue = maxDetune - (progress * maxDetune * 2);
+
+                      this.sound.play(soundKey, { 
+                          volume: 0.5, 
+                          detune: Math.round(detuneValue) // Round to nearest cent
+                      });
                       this.animateMerge(
                           gameObjectA as Phaser.Physics.Matter.Image,
                           gameObjectB as Phaser.Physics.Matter.Image,
                           nextPie, pieIndex
                       );
-                  } else { // Merging largest pies
-                     this.sound.play('merge', { volume: 0.6 });
+                  } else { // Merging largest pies (no sound needed as they just disappear)
                      this.group.remove(gameObjectA, true, true);
                      this.group.remove(gameObjectB, true, true);
-                     this.score += (pieIndex + 1) * 10;
-                     this.drawScore();
                   }
               }
           }
@@ -811,17 +829,11 @@ class Main extends Phaser.Scene {
       let stableTouchCount = 0;
 
       // Count pies touching for the required duration
-      for (const [bodyId, touchStartTime] of this._ceilingTouchTimers.entries()) {
+      for (const touchStartTime of this._ceilingTouchTimers.values()) {
            if (currentTime - touchStartTime >= this.STABLE_TOUCH_DURATION) {
               stableTouchCount++;
            }
-           // Optional: Clean up entries for bodies that no longer exist (e.g., merged away)
-           // This requires getting the body/gameObject from bodyId, which can be tricky.
-           // Let's assume for now that collisionend handles most cleanup.
       }
-
-      // --- DEBUG LOGGING --- 
-      // console.log(`Timers: ${this._ceilingTouchTimers.size}, Stable: ${stableTouchCount}, Displayed: ${this._currentDisplayedCeilingCount}`);
 
       // High-water mark logic based on STABLE touches
       if (stableTouchCount > this._currentDisplayedCeilingCount) {
@@ -839,9 +851,6 @@ class Main extends Phaser.Scene {
           const colorIndex = Phaser.Math.Clamp(this._currentDisplayedCeilingCount - 1, 0, this.INDICATOR_COLORS.length - 1);
           finalColor = this.INDICATOR_COLORS[colorIndex];
       }
-
-      // --- DEBUG LOGGING --- 
-      // console.log(`Final Count: ${this._currentDisplayedCeilingCount}, Color Index: ${colorIndex}, Color: ${finalColor.toString(16)}`);
 
       // Update Ceiling Bar color
       this.ceilingBarGraphics.clear();
@@ -900,6 +909,34 @@ class Main extends Phaser.Scene {
         this.playAgainButtonContainer.setVisible(true);
         this.tweens.add({ targets: this.playAgainButtonContainer, alpha: 1, duration: 300 });
     }
+
+  private _handleResize() {
+      const displayWidth = this.scale.displaySize.width;
+      // const displayHeight = this.scale.displaySize.height; // Not strictly needed for this logic
+      const camera = this.cameras.main;
+
+      // Position Title
+      if (this.titleText) {
+          const titlePaddingTop = 25; // Pixels from the top edge of camera view
+          this.titleText.setPosition(
+              camera.worldView.centerX, 
+              camera.worldView.y + titlePaddingTop
+          );
+      }
+      
+      // Position Score Text
+      if (this.scoreText) {
+         const scorePaddingLeft = 10; // Pixels from left edge of camera view
+         const scoreY = camera.worldView.y + 100; // Position below title relative to camera top
+         this.scoreText.setPosition(
+            camera.worldView.x + this.WALL_OFFSET + scorePaddingLeft, // Keep wall offset relative to world
+            scoreY
+         );
+      }
+
+      // Note: Ceiling Counter remains relative to game world coords (CEILING_Y)
+      // If needed, Play Again button and Final Score could also be positioned relative to camera center/bottom
+  }
 
 } // End of Main Scene
 
