@@ -13,14 +13,14 @@ import { Pie, pies } from './pies'; // Import pie data
 //   assetKey: string;
 // }
 
-// Restore PhysicsConfig type definition
+// Physics configuration type for Matter.js bodies
 type PhysicsConfig = {
-  friction: number;
-  bounce: number;
-  density?: number; // Optional properties for future use
-  frictionAir?: number;
-  frictionStatic?: number;
-  slop?: number;
+  friction: number;      // Friction between bodies
+  bounce: number;        // Restitution/bounciness
+  density?: number;      // Mass per unit area
+  frictionAir?: number;  // Air resistance
+  frictionStatic?: number; // Static friction threshold  
+  slop?: number;        // Collision tolerance
 };
 
 // Example experimental config
@@ -111,6 +111,9 @@ class Main extends Phaser.Scene {
   piesTouchingCeilingThisFrame: Set<number> = new Set();
   gaugeColors: number[] = [];
   ceilingGaugeSegments: Phaser.GameObjects.Graphics[] = [];
+
+  // --- TESTING: Property to track next pie index ---
+  private _nextDropIndex = 0;
 
   // --- Lifecycle Methods ---
   preload() {
@@ -334,7 +337,78 @@ class Main extends Phaser.Scene {
     // Fade in GAME OVER text
     this.tweens.add({ targets: this.gameOverText, alpha: 1, duration: 500, ease: 'Linear' });
 
-    // Pie popping sequence
+    const piesToAnimate = this.group.getChildren().slice();
+    let animationsRemaining = piesToAnimate.length;
+
+    const centerX = +this.game.config.width / 2;
+    const centerY = +this.game.config.height / 2; // Or center of play area
+
+    // Function to call when all animations finish
+    const onAllAnimationsComplete = () => {
+        if (animationsRemaining === 0) {
+            this._showFinalScoreAndButton();
+        }
+    };
+
+    // --- Start NEW Animation Logic ---
+    piesToAnimate.forEach((pieObject) => {
+        if (!(pieObject instanceof Phaser.Physics.Matter.Image) || !pieObject.body) {
+            animationsRemaining--; // Decrement if object invalid at start
+            onAllAnimationsComplete(); // Check completion immediately
+            return;
+        }
+
+        const matterPieObject = pieObject as Phaser.Physics.Matter.Image;
+        matterPieObject.setStatic(true); // Disable physics
+
+        // Inhale Tween
+        const inhaleTween = this.tweens.add({
+            targets: matterPieObject,
+            scale: matterPieObject.scale * 0.8, // Shrink a bit
+            x: matterPieObject.x + (centerX - matterPieObject.x) * 0.1, // Move slightly towards center X
+            y: matterPieObject.y + (centerY - matterPieObject.y) * 0.1, // Move slightly towards center Y
+            duration: 300, // Short duration
+            ease: 'Quad.easeOut',
+            onComplete: () => {
+                // Ensure object and body still valid before starting explode
+                if (!matterPieObject || !matterPieObject.body) {
+                    animationsRemaining--;
+                    onAllAnimationsComplete();
+                    return;
+                }
+
+                // Explode Tween
+                const targetX = matterPieObject.x + Phaser.Math.RND.between(-1500, 1500); // Fly further out
+                const targetY = matterPieObject.y + Phaser.Math.RND.between(-1500, 1500);
+                const explodeTween = this.tweens.add({
+                    targets: matterPieObject,
+                    x: targetX,
+                    y: targetY,
+                    angle: Phaser.Math.RND.between(-1080, 1080), // More spin
+                    duration: Phaser.Math.RND.between(400, 800), // Faster pop
+                    ease: 'Expo.easeOut', // Fast exit
+                    onComplete: () => {
+                        // Stop tween explicitly before destroy
+                        if (explodeTween && explodeTween.isPlaying()) { explodeTween.stop(); }
+                        // Check body exists before destroy
+                        if (matterPieObject.active && matterPieObject.body) { 
+                           matterPieObject.destroy(); 
+                        }
+                        animationsRemaining--;
+                        onAllAnimationsComplete(); // Check if all done
+                    }
+                });
+                // Ensure tween stops if object destroyed prematurely
+                 matterPieObject.once('destroy', () => { if (explodeTween && explodeTween.isPlaying()) { explodeTween.stop(); } });
+            }
+        });
+         // Ensure inhale tween stops if object destroyed prematurely
+        matterPieObject.once('destroy', () => { if (inhaleTween && inhaleTween.isPlaying()) { inhaleTween.stop(); } });
+    });
+    // --- End NEW Animation Logic ---
+
+    // --- Start OLD Popping Logic (Commented Out) ---
+    /*
     const piesToPop = this.group.getChildren().slice();
     Phaser.Utils.Array.Shuffle(piesToPop);
     const popDelay = 50; // Consider constant
@@ -359,9 +433,15 @@ class Main extends Phaser.Scene {
             const popTween = this.tweens.add({
               targets: matterPieObject, scale: 0, angle: currentAngle + 180, duration: 200, ease: 'Sine.easeInOut',
               onComplete: () => {
+                // Explicitly stop the tween first
+                if (popTween && popTween.isPlaying()) { 
+                   popTween.stop(); 
+                }
+                // Now safely remove/destroy
                 if (matterPieObject.active && this.group.contains(matterPieObject)) {
                   this.group.remove(matterPieObject, true, true);
                 }
+                // Check if last pie popped
                 if (index === piesToPop.length - 1) {
                   this._showFinalScoreAndButton(); // Call helper
                 }
@@ -372,9 +452,12 @@ class Main extends Phaser.Scene {
         });
       }
     });
+    */
+    // --- End OLD Popping Logic ---
 
-    if (piesToPop.length === 0) {
-       this.time.delayedCall(totalDelay, this._showFinalScoreAndButton, [], this);
+    // Handle case where there were no pies to animate
+    if (animationsRemaining === 0) {
+       this.time.delayedCall(500, onAllAnimationsComplete, [], this); // Show UI after a small delay if no pies
     }
   }
 
@@ -555,12 +638,31 @@ class Main extends Phaser.Scene {
   }
 
   private _selectAndUpdateNextDropperPie() {
+      // Restore original random limited logic:
       const availableToDrop = this.droppablePieIndices.filter(index => index <= this.INITIAL_DROPPER_RANGE_MAX_INDEX);
       const nextPieIndex = Phaser.Math.RND.pick(availableToDrop);
       const nextPie = pies[nextPieIndex];
       this.updatePieDropper(nextPie);
-  }
 
+      // TESTING: Select MID-RANGE pie randomly
+      // const minDropIndex = 5;
+      // const maxDropIndex = 12;
+      // const nextPieIndex = Phaser.Math.RND.between(minDropIndex, maxDropIndex);
+      // const nextPie = pies[nextPieIndex];
+      // this.updatePieDropper(nextPie);
+      // --- END TESTING ---
+
+      // Original ANY pie random logic:
+      // const nextPieIndex = Phaser.Math.RND.between(0, pies.length - 1);
+      // const nextPie = pies[nextPieIndex];
+      // this.updatePieDropper(nextPie);
+
+      // Original sequential logic:
+      // const nextPieIndex = this._nextDropIndex;
+      // this._nextDropIndex = (this._nextDropIndex + 1) % pies.length; // Increment and wrap
+      // const nextPie = pies[nextPieIndex];
+      // this.updatePieDropper(nextPie);
+  }
 
   private _setupCollisionListeners() {
       this.matter.world.on('collisionactive', this._handleCollisionActive, this);
@@ -597,11 +699,12 @@ class Main extends Phaser.Scene {
               // Play squish sound on first contact if one is new
               if (isANew !== isBNew) {
                   this.sound.play('squish', { volume: 0.5 });
+                  // Restore original location of setData call:
                   let newPieObject = isANew ? gameObjectA : gameObjectB;
                   if (newPieObject) { newPieObject.setData('isNew', false); }
               }
 
-              // Check for merge condition
+              // Check for merge condition - RESTORING
               if (gameObjectA.name === gameObjectB.name &&
                   this.group.contains(gameObjectA) && this.group.contains(gameObjectB) &&
                   !gameObjectA.getData('isMerging') && !gameObjectB.getData('isMerging') &&
@@ -632,8 +735,25 @@ class Main extends Phaser.Scene {
   }
 
   private _initializeDropperState() {
+    // Restore original random limited logic:
     const initialDroppableRange = this.droppablePieIndices.filter(index => index <= this.INITIAL_DROPPER_RANGE_MAX_INDEX);
     this.updatePieDropper(pies[Phaser.Math.RND.pick(initialDroppableRange)]);
+
+    // TESTING: Drop MID-RANGE pies randomly
+    // const minDropIndex = 5;
+    // const maxDropIndex = 12;
+    // const initialPieIndex = Phaser.Math.RND.between(minDropIndex, maxDropIndex);
+    // this.updatePieDropper(pies[initialPieIndex]);
+    // --- END TESTING ---
+
+    // Original ANY pie random logic:
+    // const initialPieIndex = Phaser.Math.RND.between(0, pies.length - 1);
+    // this.updatePieDropper(pies[initialPieIndex]);
+
+    // Original sequential logic:
+    // const initialPieIndex = this._nextDropIndex;
+    // this._nextDropIndex = (this._nextDropIndex + 1) % pies.length; // Increment and wrap for next time
+    // this.updatePieDropper(pies[initialPieIndex]);
 
     // Dropper glow effect
     const glow = this.dropper.postFX.addGlow(0x99ddff);
