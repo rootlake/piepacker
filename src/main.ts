@@ -401,7 +401,7 @@ class Main extends Phaser.Scene {
         // Update score and announce
         this.score += (pieIndex + 1) * 10;
         this.drawScore();
-        this._checkAndAnnounceNewPie(nextPie, pieIndex + 1);
+        this._checkAndAnnounceNewPie(nextPie, pieIndex);
       }
     };
 
@@ -959,20 +959,6 @@ class Main extends Phaser.Scene {
           console.log(`Game Over: Stable ceiling touch count reached ${this._currentDisplayedCeilingCount}`);
           this.triggerGameOver();
       }
-  }
-
-  private _redrawBoundaries() {
-    // This method is no longer called, but keep definition for now
-    this.boundsGraphics.clear();
-    const rightWallX = +this.game.config.width - this.WALL_OFFSET;
-    this.boundsGraphics.lineStyle(1, 0xffffff, 1);
-    this.boundsGraphics.moveTo(this.WALL_OFFSET, this.CEILING_Y);
-    this.boundsGraphics.lineTo(this.WALL_OFFSET, this.FLOOR_Y);
-    this.boundsGraphics.moveTo(this.WALL_OFFSET, this.FLOOR_Y);
-    this.boundsGraphics.lineTo(rightWallX, this.FLOOR_Y);
-    this.boundsGraphics.moveTo(rightWallX, this.CEILING_Y);
-    this.boundsGraphics.lineTo(rightWallX, this.FLOOR_Y);
-    this.boundsGraphics.strokePath();
   }
 
   private _checkAndAnnounceNewPie(pie: Pie, pieIndex: number) {
