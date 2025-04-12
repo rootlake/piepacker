@@ -34,8 +34,8 @@ const experimentalPhysics: PhysicsConfig = {
 
 class Main extends Phaser.Scene {
   // --- Constants ---
-  private readonly CEILING_Y = 150;
-  private readonly FLOOR_Y = 900;
+  private readonly CEILING_Y = 100;
+  private readonly FLOOR_Y = 850;
   private readonly WALL_OFFSET = 65;
   private readonly MAX_CEILING_TOUCHES = 10; // Reverted back (was 3 for testing)
   private readonly INITIAL_DROPPER_RANGE_MAX_INDEX = 7;
@@ -83,29 +83,29 @@ class Main extends Phaser.Scene {
       strokeThickness: 3
   };
   private readonly COUNTER_CIRCLE_RADIUS = 30;
-  private readonly COLOR_GREEN = 0x00ff00;
+  private readonly COLOR_GREEN = 0x3EB24A;
   private readonly INDICATOR_COLORS = [
     0x3EB24A, 0x7CC242, 0x9DCB3B, 0xC4D92E, 0xE7E621, 
     0xF5EB02, 0xF5C913, 0xF6951E, 0xF15B22, 0xE92A28
   ];
-  private readonly STABLE_TOUCH_DURATION = 250; // ms duration for a touch to count
-  private readonly STRAIN_SOUND_INTERVAL = 5000; // Minimum ms between strain sounds
-  private readonly SIGH_DELAY_MS = 3000; // Minimum ms at zero before sigh plays
-
+  private readonly STABLE_TOUCH_DURATION = 500; // ms a pie must touch before counting
+  private readonly STRAIN_SOUND_INTERVAL = 5000; // ms between strain sounds
+  
   // --- State & Game Objects ---
   score = 0;
   dropper!: Phaser.GameObjects.Image;
   group!: Phaser.GameObjects.Group;
   isGameOver = false;
+  isGameActive = false; // ADDED: Flag to control update loop logic
   scoreText!: Phaser.GameObjects.Text;
   isDropping = false;
   announcedPieIndices: Set<number> = new Set();
   isAnnouncing = false;
   availableTemplates: string[] = [];
   flashPool!: Phaser.GameObjects.Group;
-  gameOverText!: Phaser.GameObjects.Text;
+  gameOverText!: Phaser.GameObjects.Text; 
   playAgainButtonContainer!: Phaser.GameObjects.Container;
-  finalScoreText!: Phaser.GameObjects.Text;
+  finalScoreText!: Phaser.GameObjects.Text; 
   muteButtonContainer!: Phaser.GameObjects.Container; // Keep commented out usage later
   restartButtonContainer!: Phaser.GameObjects.Container; // Keep commented out usage later
   droppablePieIndices: number[] = [0, 1, 2, 3, 4, 5, 6, 7];
@@ -117,13 +117,14 @@ class Main extends Phaser.Scene {
   ceilingCounterText!: Phaser.GameObjects.Text;
   ceilingCounterBg!: Phaser.GameObjects.Graphics;
   _currentDisplayedCeilingCount = 0;
-  private _lastStrainSoundPlayTime: { [key: string]: number } = {}; // Timestamps for rate limiting
+  private _lastStrainSoundPlayTime: { [key: string]: number } = {}; // Track last play time for each squeak
   private _hasReachedSighThreshold: boolean = false; // Added for sigh sound logic
-  private _timeAtZeroStart: number | null = null; // Tracks when count first hit zero
-  private _highWaterMarkCeilingTouchCount = 0; // Track highest touch count since last zero
-  private _lastNonZeroTouchCount = 0; // Added: Track last count before becoming zero
+  private _timeAtZeroStart: number | null = null; // Tracks when count first hit 1 or 0
   private _previousCeilingTouchCount = 0; // ADDED: Track count from previous frame for sound triggers
   // titleText!: Phaser.GameObjects.Text; // Title removed earlier
+  titleLogo!: Phaser.GameObjects.Image;
+  titlePlayButton!: Phaser.GameObjects.Image;
+  titleMenuButton!: Phaser.GameObjects.Image;
 
   // --- Lifecycle Methods ---
   preload() {
@@ -161,85 +162,122 @@ class Main extends Phaser.Scene {
         'assets/sounds/sigh.ogg',
         'assets/sounds/sigh.aac'
     ]);
-    // REMOVED other pop loads
-    // this.load.audio('pop1', ['assets/sounds/pop1.ogg', 'assets/sounds/pop1.aac']);
-    // this.load.audio('pop2', ['assets/sounds/pop2.ogg', 'assets/sounds/pop2.aac']);
-    // this.load.audio('pop4', ['assets/sounds/pop4.ogg', 'assets/sounds/pop4.aac']);
-    // this.load.audio('pop5', ['assets/sounds/pop5.ogg', 'assets/sounds/pop5.aac']);
-    // this.load.audio('pop6', ['assets/sounds/pop6.ogg', 'assets/sounds/pop6.aac']);
+   
+    // Load UI graphics
+    this.load.image('gamelogo', 'assets/images/gamelogo.png');
+    this.load.image('playbutton', 'assets/images/playbutton.png');
+    this.load.image('menubutton', 'assets/images/menubutton.png');
+
+    // Load the pie texture atlas
+    // ... existing code ...
   }
 
   create() {
     console.log("Running create...");
 
-    // Matter world setup
-    this.matter.world.setBounds(this.WALL_OFFSET, this.CEILING_Y, +this.game.config.width - (this.WALL_OFFSET * 2), this.FLOOR_Y - this.CEILING_Y); 
-    this.matter.world.setGravity(0, 1.5);
+    // --- Title Screen Elements & Animations ---
+    const logoX = +this.game.config.width / 2;
+    const logoY = +this.game.config.height / 4.5; 
+    this.titleLogo = this.add.image(logoX, logoY, 'gamelogo') // Assign to class property
+      .setScale(0) 
+      .setOrigin(0.5)
+      .setDepth(100);
 
-    // Create Pies Group
-    this.group = this.add.group();
+    // Button properties
+    const desiredGap = 60; 
+    const logoHeight = 512; 
+    const buttonScale = 0.5; 
+    const buttonHeight = 128 * buttonScale; 
+    const buttonX = logoX;
 
-    // --- Create Ceiling Sensor ---
-    const sensorY = this.CEILING_Y - 1;
-    this.ceilingSensorBody = this.matter.add.rectangle(
-      +this.game.config.width / 2,
-      sensorY,
-      +this.game.config.width - (this.WALL_OFFSET * 2),
-      5, // Small height for the sensor
-      { isStatic: true, isSensor: true, label: 'ceilingSensor' }
-    );
+    // Calculate adjusted positions
+    const playButtonY = logoY + 310; // Position play button 300px below logo center
+    const menuButtonY = logoY + 450; // Position menu button 450px below logo center
 
-    // --- Create UI Elements ---
-    this._createUIElements();
+    // Create Play Button (initially scaled to 0)
+    this.titlePlayButton = this.add.image(buttonX, playButtonY, 'playbutton')
+      .setOrigin(0.5)
+      .setScale(0)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(100);
+    this.titlePlayButton.on('pointerdown', () => { this._startGame(); });
 
-    // --- Create Object Pools ---
-    this._createGameObjectPools();
+    // Create Menu Button (initially scaled to 0)
+    this.titleMenuButton = this.add.image(buttonX, menuButtonY, 'menubutton')
+      .setOrigin(0.5)
+      .setScale(0)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(100);
+    this.titleMenuButton.on('pointerdown', () => { this._startGame(); });
 
-    // --- Collision Handling ---
-    this.matter.world.on('collisionstart', this._handleCollisionStart, this);
-    // Add back listeners needed for ceiling sensor
-    this.matter.world.on('collisionactive', this._handleCollisionActive, this);
-    this.matter.world.on('collisionend', this._handleCollisionEnd, this);
+    // Animate Logo
+    this.tweens.add({
+      targets: this.titleLogo,
+      scale: 1, 
+      duration: 1000, 
+      ease: 'Back.Out'
+      // Removed onComplete as buttons animate separately now
+    });
 
-    // --- Input Handling ---
-    this.input.on('pointerup', this._handlePointerUp, this);
+    // Animate Buttons (slightly delayed)
+    this.tweens.add({
+        targets: [this.titlePlayButton, this.titleMenuButton],
+        scale: buttonScale, 
+        duration: 500, 
+        ease: 'Back.Out',
+        delay: 200 // Start buttons animation shortly after logo starts
+    });
+    // --- End Title Screen Elements & Animations ---
 
-    // --- Initial Game State ---
-    this._initializeDropperState();
-    this._initializeGaugeState();
+    // --- Main Game Setup (Now happens in _startGame) ---
 
-    // --- Resize Handling ---
+    // --- Initial Listeners (Needed for Title Screen & Game) ---
+    // Add pointerup listener here, it will be used by _handlePointerUp later
+    this.input.on('pointerup', this._handlePointerUp, this); 
+    // Add resize listener here
     this.scale.on('resize', this._handleResize, this);
-    this._handleResize();
+    this._handleResize(); // Call once for initial screen size
 
-    // --- Game Over State Reset ---
-    this.isGameOver = false;
   }
 
   update(/* time: number, delta: number */) {
-    if (!this.isGameOver) {
+    // Only run game logic if the game is active (past title screen)
+    if (this.isGameActive && !this.isGameOver) { 
         this._updateUIIndicators();
-        this._redrawBoundaries(); // Use correct method name
+        this._redrawBoundaries(); 
         this._checkGameOverCondition();
     }
+
+    // --- Cleanup falling title elements --- 
+    const screenBottom = +this.game.config.height + 200; // Position well below screen
+    [this.titleLogo, this.titlePlayButton, this.titleMenuButton].forEach(element => {
+        // Check element exists, has a body, and is off-screen
+        if (element && element.body && element.y > screenBottom) {
+            // Remove body from Matter world IF it exists
+            if (element.body) { 
+                 this.matter.world.remove(element.body);
+            }
+            element.destroy(); // Destroy the GameObject
+        }
+    });
   }
 
   // --- Core Gameplay Methods ---
   updatePieDropper(pie: Pie) {
     this.isDropping = true;
 
-    const targetY = this.CEILING_Y - pie.radius - 10;
+    const targetY = this.CEILING_Y - pie.radius - 10; // Reverted to original calculation
     const centerX = +this.game.config.width / 2;
-    const startY = -pie.radius;
+    const startY = -pie.radius; // Keep starting above screen
 
     this.dropper
       .setTexture('pie_atlas', pie.assetKey)
       .setName(pie.name)
       .setDisplaySize(pie.radius * 2, pie.radius * 2)
-      .setY(startY)
+      .setY(startY) 
       .setX(centerX)
       .setVisible(true);
-
+    
     this.tweens.add({
         targets: this.dropper,
         y: targetY,
@@ -269,7 +307,7 @@ class Main extends Phaser.Scene {
       .setCircle(pie.radius)
       .setFriction(experimentalPhysics.friction)
       .setBounce(experimentalPhysics.bounce)
-      .setFrictionStatic(experimentalPhysics.frictionStatic ?? 0)
+      .setFrictionStatic(experimentalPhysics.frictionStatic ?? 0) 
       .setDepth(-1);
     return gameObject;
   }
@@ -397,8 +435,8 @@ class Main extends Phaser.Scene {
 
     // Word wrapping
     const playAreaWidth = +this.game.config.width - (this.WALL_OFFSET * 2);
-    const textPadding = 40;
-    const maxWidth = playAreaWidth - textPadding;
+    const textPadding = 40; 
+    const maxWidth = playAreaWidth - textPadding; 
     announcementText.setScale(1).setAlpha(1); // Measure at full size
     if (announcementText.width > maxWidth) {
         announcementText.setStyle({ wordWrap: { width: maxWidth, useAdvancedWrap: true } });
@@ -547,7 +585,7 @@ class Main extends Phaser.Scene {
             matterPieObject.once('destroy', () => { if (popTween && popTween.isPlaying()) { popTween.stop(); } });
           }
         });
-      }
+        }
     });
     */
     // --- End OLD Popping Logic ---
@@ -559,53 +597,6 @@ class Main extends Phaser.Scene {
   }
 
   // --- Private Helper Methods ---
-
-  private _initializeProperties() {
-    // Initialize Phaser objects needed early
-    this.dropper = this.add.image(+this.game.config.width / 2, 100, 'pie_atlas', pies[0].assetKey);
-    this.group = this.add.group();
-
-    // Initialize state
-    this.isGameOver = false;
-    this.isDropping = false;
-    this.isAnnouncing = false;
-    this.announcedPieIndices.clear();
-    this.availableTemplates = [...announcementTemplates];
-    Phaser.Utils.Array.Shuffle(this.availableTemplates);
-    this.score = 0; // Reset score if restarting scene
-    // Reset droppable pies if needed (depends on game design)
-    // this.droppablePieIndices = [0, 1, 2, 3, 4, 5, 6, 7];
-  }
-
-  private _setupPhysics() {
-    // Ceiling Body
-    this.ceilingBody = this.matter.add.rectangle(
-        +this.game.config.width / 2,
-        this.CEILING_Y - 5,
-        +this.game.config.width - (this.WALL_OFFSET * 2),
-        10,
-        { isStatic: true, label: 'ceiling' }
-    );
-
-    // Ceiling Sensor
-    const sensorY = this.CEILING_Y - 1;
-    this.ceilingSensorBody = this.matter.add.rectangle(
-      +this.game.config.width / 2,
-      sensorY,
-      +this.game.config.width - (this.WALL_OFFSET * 2),
-      5,
-      { isStatic: true, isSensor: true, label: 'ceilingSensor' }
-    );
-
-    // World Bounds
-    this.matter.world.setBounds(
-      this.WALL_OFFSET,
-      this.CEILING_Y,
-      +this.game.config.width - (this.WALL_OFFSET * 2),
-      this.FLOOR_Y - this.CEILING_Y,
-      undefined, undefined, undefined, false, true
-    );
-  }
 
   private _createUIElements() {
     // Dropper (initially hidden and using placeholder texture)
@@ -685,18 +676,6 @@ class Main extends Phaser.Scene {
       }
   }
 
-  private _setupInputHandling() {
-      this.input.on("pointerup", this._handlePointerUp, this);
-
-      // Update light position with pointer move (example)
-      this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-          const light = this.lights.lights[0]; // Assuming only one light
-          if (light) {
-              light.setPosition(pointer.x, pointer.y);
-          }
-      });
-  }
-
   private _handlePointerUp(pointer: Phaser.Input.Pointer) {
       // Resume Audio Context
       if (this.sound instanceof Phaser.Sound.WebAudioSoundManager && this.sound.context.state === 'suspended') {
@@ -742,25 +721,11 @@ class Main extends Phaser.Scene {
   }
 
   private _selectAndUpdateNextDropperPie() {
-      // REMOVED TEMPORARY TESTING: Drop only large pies
-      // const minDropIndex = 10; 
-      // const maxDropIndex = pies.length - 1;
-      // const nextPieIndex = Phaser.Math.RND.between(minDropIndex, maxDropIndex);
-      // const nextPie = pies[nextPieIndex];
-      // this.updatePieDropper(nextPie);
-      // --- END TEMPORARY TESTING ---
-
       // Restore original random limited logic:
       const availableToDrop = this.droppablePieIndices.filter(index => index <= this.INITIAL_DROPPER_RANGE_MAX_INDEX);
-      const nextPieIndex = Phaser.Math.RND.pick(availableToDrop);
-      const nextPie = pies[nextPieIndex];
-      this.updatePieDropper(nextPie);
-  }
-
-  private _setupCollisionListeners() {
-      this.matter.world.on('collisionactive', this._handleCollisionActive, this);
-      this.matter.world.on("collisionstart", this._handleCollisionStart, this);
-      this.matter.world.on('collisionend', this._handleCollisionEnd, this); // ADDED listener
+            const nextPieIndex = Phaser.Math.RND.pick(availableToDrop);
+            const nextPie = pies[nextPieIndex];
+            this.updatePieDropper(nextPie); 
   }
 
   private _handleCollisionActive(event: Phaser.Physics.Matter.Events.CollisionActiveEvent) {
@@ -782,7 +747,7 @@ class Main extends Phaser.Scene {
   }
 
   private _handleCollisionStart(event: Phaser.Physics.Matter.Events.CollisionStartEvent) {
-      for (const pair of event.pairs) {
+        for (const pair of event.pairs) {
           const bodyA = pair.bodyA as MatterJS.BodyType;
           const bodyB = pair.bodyB as MatterJS.BodyType;
           const gameObjectA = bodyA.gameObject;
@@ -795,7 +760,7 @@ class Main extends Phaser.Scene {
               const isBNew = gameObjectB.getData('isNew') === true;
 
               // Play squish sound on first contact if one is new
-              if (isANew !== isBNew) {
+              if (isANew !== isBNew) { 
                   // this.sound.play('squish', { volume: 0.5 }); // DISABLED temporarily
                   // Restore original location of setData call:
                   let newPieObject = isANew ? gameObjectA : gameObjectB;
@@ -809,11 +774,11 @@ class Main extends Phaser.Scene {
                  )
               {
                   const pieIndex = pies.findIndex((pie) => pie.name === gameObjectA.name);
-                  gameObjectA.setData('isMerging', true);
-                  gameObjectB.setData('isMerging', true);
+            gameObjectA.setData('isMerging', true);
+            gameObjectB.setData('isMerging', true);
 
                   if (pieIndex < pies.length - 1) { // Not largest pie
-                      const nextPie = pies[pieIndex + 1];
+              const nextPie = pies[pieIndex + 1];
                       const soundKey = 'pop'; // Restore pop sound
                       // Calculate detune based on pie size (index 0 = lowest pitch, index max = highest)
                       const maxDetune = 600; // Max detune in cents (+/- 6 semitones)
@@ -828,14 +793,14 @@ class Main extends Phaser.Scene {
                           detune: Math.round(detuneValue) // Restore detune
                       });
 
-                      this.animateMerge(
+              this.animateMerge(
                           gameObjectA as Phaser.Physics.Matter.Image,
-                          gameObjectB as Phaser.Physics.Matter.Image,
+                  gameObjectB as Phaser.Physics.Matter.Image,
                           nextPie, pieIndex
-                      );
+              );
                   } else { // Merging largest pies (no sound needed as they just disappear)
-                     this.group.remove(gameObjectA, true, true);
-                     this.group.remove(gameObjectB, true, true);
+               this.group.remove(gameObjectA, true, true);
+               this.group.remove(gameObjectB, true, true);
                   }
               }
           }
@@ -859,13 +824,6 @@ class Main extends Phaser.Scene {
   }
 
   private _initializeDropperState() {
-    // REMOVED TEMPORARY TESTING: Drop only large pies initially too
-    // const minDropIndex = 10; 
-    // const maxDropIndex = pies.length - 1;
-    // const initialPieIndex = Phaser.Math.RND.between(minDropIndex, maxDropIndex);
-    // this.updatePieDropper(pies[initialPieIndex]);
-    // --- END TEMPORARY TESTING ---
-
     // Restore original random limited logic:
     const initialDroppableRange = this.droppablePieIndices.filter(index => index <= this.INITIAL_DROPPER_RANGE_MAX_INDEX);
     this.updatePieDropper(pies[Phaser.Math.RND.pick(initialDroppableRange)]);
@@ -1028,10 +986,10 @@ class Main extends Phaser.Scene {
   }
 
     private _showFinalScoreAndButton() {
-        this.finalScoreText.setText(`Final Score: ${this.score}`);
+            this.finalScoreText.setText(`Final Score: ${this.score}`);
         // Fade in score and button
         this.tweens.add({ targets: this.finalScoreText, alpha: 1, duration: 300 });
-        this.playAgainButtonContainer.setVisible(true);
+            this.playAgainButtonContainer.setVisible(true);
         this.tweens.add({ targets: this.playAgainButtonContainer, alpha: 1, duration: 300 });
     }
 
@@ -1049,30 +1007,79 @@ class Main extends Phaser.Scene {
       }
   }
 
-  // Updated helper function to play strain sounds based on ranges with rate limiting
-  private _playStrainSounds(currentCount: number) {
-    const ranges = [
-      { min: 2, max: 4, key: 'squeak1', volume: 0.4 },
-      { min: 5, max: 7, key: 'squeak2', volume: 0.6 },
-      { min: 8, max: 10, key: 'squeak3', volume: 0.8 }
-    ];
-    const currentTime = this.time.now;
+  // ADDED: Method to initialize and start the main game
+  private _startGame() {
+    // Prevent starting multiple times
+    if (this.isGameActive) return; 
 
-    for (const range of ranges) {
-        if (currentCount >= range.min && currentCount <= range.max) {
-            const soundKey = range.key;
-            const lastPlayTime = this._lastStrainSoundPlayTime[soundKey] || 0;
-
-            // Check if interval has passed
-            if (currentTime - lastPlayTime > this.STRAIN_SOUND_INTERVAL) {
-                // console.log(`Playing strain sound: ${soundKey} for count ${currentCount}`);
-                this.sound.play(soundKey, { volume: range.volume });
-                this._lastStrainSoundPlayTime[soundKey] = currentTime; // Update last play time
+    // 1. Enable Physics and let Title Elements Fall
+    const elementsToDrop = [this.titleLogo, this.titlePlayButton, this.titleMenuButton];
+    elementsToDrop.forEach(element => {
+        if (element) {
+            // Convert the regular image to a Matter physics body
+            this.matter.add.gameObject(element, {
+                // Optional: Adjust physics properties if needed
+                // friction: 0.1,
+                // bounce: 0.2,
+            }); 
+            // Ensure it's treated as a rectangle for collision/physics shape
+            if (element.body) { // Check if body was created successfully
+               (element as Phaser.Physics.Matter.Image).setRectangle(element.displayWidth, element.displayHeight);
+               // MAKE IT A SENSOR TO IGNORE FLOOR COLLISION
+               (element as Phaser.Physics.Matter.Image).setSensor(true);
             }
-            // If count is in this range, don't check lower ranges
-            break; 
+            // Optionally give a slight push
+            // (element as Phaser.Physics.Matter.Image).setVelocityY(5);
         }
+    });
+
+    // 2. Start Background Animation by adding CSS class
+    const appElement = document.getElementById('app');
+    if (appElement) {
+        appElement.classList.add('background-in-place');
     }
+
+    // 3. Setup Main Game (with a slight delay)
+    this.time.delayedCall(200, () => { 
+        // Matter world setup (Needs to exist before adding game objects)
+        this.matter.world.setBounds(this.WALL_OFFSET, this.CEILING_Y, +this.game.config.width - (this.WALL_OFFSET * 2), this.FLOOR_Y - this.CEILING_Y); 
+        this.matter.world.setGravity(0, 4); // Use game gravity
+
+        // Create Pies Group
+        this.group = this.add.group();
+
+        // --- Create Ceiling Sensor ---
+        const sensorY = this.CEILING_Y - 1;
+        this.ceilingSensorBody = this.matter.add.rectangle(
+          +this.game.config.width / 2,
+          sensorY,
+          +this.game.config.width - (this.WALL_OFFSET * 2),
+          5, 
+          { isStatic: true, isSensor: true, label: 'ceilingSensor' }
+        );
+
+        // --- Create UI Elements ---
+        this._createUIElements();
+
+        // --- Create Object Pools ---
+        this._createGameObjectPools();
+
+        // --- Collision Handling ---
+        this.matter.world.on('collisionstart', this._handleCollisionStart, this);
+        this.matter.world.on('collisionactive', this._handleCollisionActive, this);
+        this.matter.world.on('collisionend', this._handleCollisionEnd, this);
+
+        // --- Initial Game State ---
+        this._initializeDropperState();
+        this._initializeGaugeState();
+
+        // --- Resize Handling ---
+        this._handleResize(); // Call once to position UI correctly
+
+        // --- Set Game Active --- 
+        this.isGameActive = true; // Allow update loop to run game logic
+        this.isGameOver = false; // Ensure game over state is reset
+    }); // End of delayed call
   }
 
 } // End of Main Scene
@@ -1080,9 +1087,9 @@ class Main extends Phaser.Scene {
 // Phaser game configuration
 const config: Types.Core.GameConfig = {
   type: Phaser.AUTO,
-  width: 720,
+  width: 720,      
   height: 1000,
-  parent: "app",
+  parent: "app",     
   transparent: true, // Make canvas transparent to see CSS background
   physics: {
     default: "matter",
@@ -1093,11 +1100,11 @@ const config: Types.Core.GameConfig = {
   },
   scale: {
     mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: 720,
+    autoCenter: Phaser.Scale.CENTER_BOTH, 
+    width: 720, 
     height: 1000,
   },
-  scene: Main,
+  scene: Main, 
 };
 
 new Phaser.Game(config);

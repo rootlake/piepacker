@@ -14,19 +14,36 @@ body {
   overflow: hidden; /* Prevent scrollbars */
   background-color: #f0f0f0; /* Fallback background color */
 
-  /* Apply background image to body */
-  background-image: url('/assets/images/counter_bg.png');
-  background-size: cover; /* Scale to cover the entire viewport */
-  background-position: center center; /* Center the image */
-  background-repeat: no-repeat;
+  /* REMOVED background properties from body */
+  /* background-image: url('/assets/images/counter_bg_tall.png'); */
+  /* background-size: cover; */
+  /* background-position: center center; */
+  /* background-repeat: no-repeat; */
 }
 
 /* Style the container where Phaser mounts */
 #app {
-  /* Ensure canvas is layered correctly if needed, but background on body is often simpler */
-  /* Optional: add border/shadow for visual separation on desktop */
-  /* border: 1px solid #ccc; */
-  /* box-shadow: 0 0 10px rgba(0,0,0,0.2); */
+  width: 100%;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  display: flex; /* Use flexbox for centering */
+  justify-content: center; /* Center horizontally */
+  align-items: center; /* Center vertically */
+  overflow: hidden; /* Prevent scrollbars if canvas slightly overflows */
+
+  /* Background Image Settings */
+  background-image: url('/assets/images/counter_bg_tall.png');
+  background-size: cover; 
+  background-repeat: no-repeat;
+  /* background-position: center bottom; */ /* Old initial position */
+  background-position: center -140px; /* UPDATED: Initial position (Top 250px hidden above) */
+  transition: background-position 0.8s ease-in-out; /* ADDED: Animation timing */
+}
+
+/* ADDED: Class for the final background state */
+#app.background-in-place {
+  background-position: center top; /* Final position (logo visible at top) */
 }
 
 /* Ensure canvas itself doesn't interfere with body background */
