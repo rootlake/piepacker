@@ -120,6 +120,9 @@ class Main extends Phaser.Scene {
   private _lastStrainSoundPlayTime: { [key: string]: number } = {}; // Timestamps for rate limiting
   private _hasReachedSighThreshold: boolean = false; // Added for sigh sound logic
   private _timeAtZeroStart: number | null = null; // Tracks when count first hit zero
+  private _highWaterMarkCeilingTouchCount = 0; // Track highest touch count since last zero
+  private _lastNonZeroTouchCount = 0; // Added: Track last count before becoming zero
+  private _previousCeilingTouchCount = 0; // ADDED: Track count from previous frame for sound triggers
   // titleText!: Phaser.GameObjects.Text; // Title removed earlier
 
   // --- Lifecycle Methods ---
@@ -133,16 +136,31 @@ class Main extends Phaser.Scene {
     // this.load.audio('squish', ['assets/sounds/squish1.ogg', 'assets/sounds/squish1.aac']); // Keep commented for now
     this.load.audio('wompwomp', ['assets/sounds/wompwomp.ogg', 'assets/sounds/wompwomp.aac']);
 
-    // Load single pop sound
-    this.load.audio('pop', ['assets/sounds/pop.ogg', 'assets/sounds/pop.aac']);
+    // Load single pop sound with fallbacks using CORRECT short names
+    this.load.audio('pop', [
+        'assets/sounds/pop.ogg', 
+        'assets/sounds/pop.aac'
+    ]);
 
-    // Load squeak/strain sounds
-    this.load.audio('squeak1', ['assets/sounds/squeak1.ogg', 'assets/sounds/squeak1.aac']);
-    this.load.audio('squeak2', ['assets/sounds/squeak2.ogg', 'assets/sounds/squeak2.aac']);
-    this.load.audio('squeak3', ['assets/sounds/squeak3.ogg', 'assets/sounds/squeak3.aac']);
+    // Load squeak/strain sounds with fallbacks using CORRECT short names
+    this.load.audio('squeak1', [
+        'assets/sounds/squeak1.ogg',
+        'assets/sounds/squeak1.aac'
+    ]);
+    this.load.audio('squeak2', [
+        'assets/sounds/squeak2.ogg',
+        'assets/sounds/squeak2.aac'
+    ]);
+    this.load.audio('squeak3', [
+        'assets/sounds/squeak3.ogg',
+        'assets/sounds/squeak3.aac'
+    ]);
 
-    // Load sigh sound
-    this.load.audio('sigh', ['assets/sounds/sigh.ogg', 'assets/sounds/sigh.aac']);
+    // Load sigh sound with fallbacks using CORRECT short names
+    this.load.audio('sigh', [
+        'assets/sounds/sigh.ogg',
+        'assets/sounds/sigh.aac'
+    ]);
     // REMOVED other pop loads
     // this.load.audio('pop1', ['assets/sounds/pop1.ogg', 'assets/sounds/pop1.aac']);
     // this.load.audio('pop2', ['assets/sounds/pop2.ogg', 'assets/sounds/pop2.aac']);
@@ -799,14 +817,17 @@ class Main extends Phaser.Scene {
                       const soundKey = 'pop'; // Restore pop sound
                       // Calculate detune based on pie size (index 0 = lowest pitch, index max = highest)
                       const maxDetune = 600; // Max detune in cents (+/- 6 semitones)
-                      const progress = pieIndex / (pies.length - 2); // 0 to 1 based on index
-                      const detuneValue = -maxDetune + (progress * maxDetune * 2); // New: low -> high
+                      // Avoid division by zero if pies.length is 1 or 2
+                      const denominator = pies.length > 2 ? pies.length - 2 : 1;
+                      const progress = pieIndex / denominator; // 0 to 1 based on index
+                      const detuneValue = -maxDetune + (progress * maxDetune * 2); // Linear pitch shift: low -> high
 
-                      // Restore pitch-shifted pop sound
+                      // Restore original pitch-shifted pop sound
                       this.sound.play(soundKey, { 
                           volume: 0.5,
                           detune: Math.round(detuneValue) // Restore detune
                       });
+
                       this.animateMerge(
                           gameObjectA as Phaser.Physics.Matter.Image,
                           gameObjectB as Phaser.Physics.Matter.Image,
@@ -890,9 +911,14 @@ class Main extends Phaser.Scene {
       // Directly update the displayed count to match the current stable count
       this._currentDisplayedCeilingCount = stableTouchCount;
 
+      // --- Update UI Colors Based on Count ---
+      // Clamp count between 0 and 9 for color indexing
+      const colorIndex = Phaser.Math.Clamp(this._currentDisplayedCeilingCount, 0, 9);
+      const indicatorColor = this.INDICATOR_COLORS[colorIndex];
+
       // Update Ceiling Bar color
       this.ceilingBarGraphics.clear();
-      this.ceilingBarGraphics.fillStyle(this.COLOR_GREEN, 1); // Use selected discrete color
+      this.ceilingBarGraphics.fillStyle(indicatorColor, 1); // Use selected color
       const barWidth = (+this.game.config.width - this.WALL_OFFSET * 2);
       const barHeight = 5;
       this.ceilingBarGraphics.fillRect(0, 0, barWidth, barHeight);
@@ -902,37 +928,69 @@ class Main extends Phaser.Scene {
 
       // Update Counter Background color
       this.ceilingCounterBg.clear();
-      this.ceilingCounterBg.fillStyle(this.COLOR_GREEN, 1); // Use selected discrete color
+      this.ceilingCounterBg.fillStyle(indicatorColor, 1); // Use selected color
       this.ceilingCounterBg.fillCircle(0, 0, this.COUNTER_CIRCLE_RADIUS);
+      // --- End UI Color Update ---
 
-      // Play strain sounds based on ranges and rate limiting
-      this._playStrainSounds(this._currentDisplayedCeilingCount);
+      // --- Sound Playback Logic --- 
+      const currentTouchCount = this._currentDisplayedCeilingCount;
+      const previousTouchCount = this._previousCeilingTouchCount;
 
-      // --- Sigh Sound Logic --- 
-      // Check if threshold was reached (Set flag)
-      if (this._currentDisplayedCeilingCount >= 3) {
-        this._hasReachedSighThreshold = true;
-        this._timeAtZeroStart = null; // Reset timer if count goes high again
+      // --- Squeak Sound Logic (Threshold Crossing & Rate Limiting) --- 
+      // Check for squeak3 threshold (8+)
+      if (currentTouchCount >= 8 && previousTouchCount < 8) {
+          const lastPlayTime = this._lastStrainSoundPlayTime['squeak3'] || 0;
+          if (currentTime - lastPlayTime > this.STRAIN_SOUND_INTERVAL) {
+              this.sound.play('squeak3', { volume: 0.8 });
+              this._lastStrainSoundPlayTime['squeak3'] = currentTime;
+          }
+      }
+      // Check for squeak2 threshold (5-7) only if squeak3 didn't trigger
+      else if (currentTouchCount >= 5 && previousTouchCount < 5) {
+          const lastPlayTime = this._lastStrainSoundPlayTime['squeak2'] || 0;
+          if (currentTime - lastPlayTime > this.STRAIN_SOUND_INTERVAL) {
+              this.sound.play('squeak2', { volume: 0.6 });
+              this._lastStrainSoundPlayTime['squeak2'] = currentTime;
+          }
+      }
+      // Check for squeak1 threshold (2-4) only if squeak2/3 didn't trigger
+      else if (currentTouchCount >= 2 && previousTouchCount < 2) {
+          const lastPlayTime = this._lastStrainSoundPlayTime['squeak1'] || 0;
+          if (currentTime - lastPlayTime > this.STRAIN_SOUND_INTERVAL) {
+              this.sound.play('squeak1', { volume: 0.4 });
+              this._lastStrainSoundPlayTime['squeak1'] = currentTime;
+          }
+      }
+      
+      // --- Sigh Sound Logic (Updated) --- 
+      // Set flag if threshold is reached
+      if (currentTouchCount >= 2) { 
+          this._hasReachedSighThreshold = true;
+          this._timeAtZeroStart = null; // Reset timer if count goes up
       }
 
-      // Check if count is 0 AND threshold was reached
-      if (this._currentDisplayedCeilingCount === 0 && this._hasReachedSighThreshold) {
-          // Start timer if it hasn't started yet
+      // Check if count is low (1 or 0) and threshold was met
+      if (currentTouchCount <= 1 && this._hasReachedSighThreshold) { // CHANGED condition to <= 1
+          // Start timer if it hasn't started
           if (this._timeAtZeroStart === null) {
               this._timeAtZeroStart = currentTime;
           }
-          // Check if enough time has passed
-          if (currentTime - this._timeAtZeroStart >= this.SIGH_DELAY_MS) {
-              this.sound.play('sigh', { volume: 0.6 }); // Play sigh sound
-              this._hasReachedSighThreshold = false; // Reset flag
+          // Check if enough time at low count has passed
+          if (currentTime - (this._timeAtZeroStart || 0) >= this.STRAIN_SOUND_INTERVAL) { // Using 5 sec interval
+              this.sound.play('sigh', { volume: 0.6 });
+              this._hasReachedSighThreshold = false; // Reset flag after playing
               this._timeAtZeroStart = null; // Reset timer
           }
-      }
-      // Reset timer if count goes above 0
-      if (this._currentDisplayedCeilingCount > 0) {
+      } 
+      // Reset timer if count goes above 1 before sigh plays
+      else if (currentTouchCount > 1) { // CHANGED condition to > 1
           this._timeAtZeroStart = null;
       }
-      // --- End Sigh Sound Logic ---
+      // --- End Sigh Sound Logic --- 
+
+      // Store current count for the next frame
+      this._previousCeilingTouchCount = currentTouchCount;
+      // --- End Sound Playback Logic ---
   }
 
   private _checkGameOverCondition() {
