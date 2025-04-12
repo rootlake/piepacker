@@ -184,10 +184,10 @@ class Main extends Phaser.Scene {
       .setDepth(100);
 
     // Button properties
-    const desiredGap = 60; 
-    const logoHeight = 512; 
+    // const desiredGap = 60; // REMOVED: Unused in this scope
+    // const logoHeight = 512; // REMOVED: Unused in this scope 
     const buttonScale = 0.5; 
-    const buttonHeight = 128 * buttonScale; 
+    // const buttonHeight = 128 * buttonScale; // REMOVED: Unused in this scope
     const buttonX = logoX;
 
     // Calculate adjusted positions
