@@ -34,9 +34,9 @@ const experimentalPhysics: PhysicsConfig = {
 
 class Main extends Phaser.Scene {
   // --- Constants ---
-  private readonly CEILING_Y = 100;
-  private readonly FLOOR_Y = 850;
-  private readonly WALL_OFFSET = 65;
+  private readonly CEILING_Y = 220; // Lowered further to accommodate dropper below scaled top logo
+  private readonly FLOOR_Y = 995; // REVERTED floor back low
+  private readonly WALL_OFFSET = 0; // Walls extend to canvas edge
   private readonly MAX_CEILING_TOUCHES = 10; // Reverted back (was 3 for testing)
   private readonly INITIAL_DROPPER_RANGE_MAX_INDEX = 7;
   private readonly SCORE_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
@@ -121,10 +121,10 @@ class Main extends Phaser.Scene {
   private _hasReachedSighThreshold: boolean = false; // Added for sigh sound logic
   private _timeAtZeroStart: number | null = null; // Tracks when count first hit 1 or 0
   private _previousCeilingTouchCount = 0; // ADDED: Track count from previous frame for sound triggers
-  // titleText!: Phaser.GameObjects.Text; // Title removed earlier
   titleLogo!: Phaser.GameObjects.Image;
   titlePlayButton!: Phaser.GameObjects.Image;
   titleMenuButton!: Phaser.GameObjects.Image;
+  topLogo!: Phaser.GameObjects.Image; // ADDED property for in-game logo
 
   // --- Lifecycle Methods ---
   preload() {
@@ -167,6 +167,7 @@ class Main extends Phaser.Scene {
     this.load.image('gamelogo', 'assets/images/gamelogo.png');
     this.load.image('playbutton', 'assets/images/playbutton.png');
     this.load.image('menubutton', 'assets/images/menubutton.png');
+    this.load.image('toplogo', 'assets/images/toplogo.png');
 
     // Load the pie texture atlas
     // ... existing code ...
@@ -177,25 +178,24 @@ class Main extends Phaser.Scene {
 
     // --- Title Screen Elements & Animations ---
     const logoX = +this.game.config.width / 2;
-    const logoY = +this.game.config.height / 4.5; 
-    this.titleLogo = this.add.image(logoX, logoY, 'gamelogo') // Assign to class property
+    const logoY = +this.game.config.height / 3; // REVERTED: Position center 1/3 down
+    this.titleLogo = this.add.image(logoX, logoY, 'gamelogo') 
       .setScale(0) 
-      .setOrigin(0.5)
+      .setOrigin(0.5, 0.5) // NEW: Center-center origin
       .setDepth(100);
 
     // Button properties
-    // const desiredGap = 60; // REMOVED: Unused in this scope
-    // const logoHeight = 512; // REMOVED: Unused in this scope 
+    const logoHeight = 512; // Assume original height
     const buttonScale = 0.5; 
-    // const buttonHeight = 128 * buttonScale; // REMOVED: Unused in this scope
-    const buttonX = logoX;
+    const buttonHeight = 150 * buttonScale; 
+    const desiredGap = 80; // INCREASED gap
 
-    // Calculate adjusted positions
-    const playButtonY = logoY + 310; // Position play button 300px below logo center
-    const menuButtonY = logoY + 450; // Position menu button 450px below logo center
+    // Recalculate positions relative to logo CENTER + half logo height
+    const playButtonY = logoY + (logoHeight / 2) + desiredGap;
+    const menuButtonY = playButtonY + (buttonHeight / 2) + (buttonHeight / 2) + desiredGap; 
 
     // Create Play Button (initially scaled to 0)
-    this.titlePlayButton = this.add.image(buttonX, playButtonY, 'playbutton')
+    this.titlePlayButton = this.add.image(logoX, playButtonY, 'playbutton')
       .setOrigin(0.5)
       .setScale(0)
       .setInteractive({ useHandCursor: true })
@@ -203,7 +203,7 @@ class Main extends Phaser.Scene {
     this.titlePlayButton.on('pointerdown', () => { this._startGame(); });
 
     // Create Menu Button (initially scaled to 0)
-    this.titleMenuButton = this.add.image(buttonX, menuButtonY, 'menubutton')
+    this.titleMenuButton = this.add.image(logoX, menuButtonY, 'menubutton')
       .setOrigin(0.5)
       .setScale(0)
       .setInteractive({ useHandCursor: true })
@@ -235,7 +235,9 @@ class Main extends Phaser.Scene {
     // Add pointerup listener here, it will be used by _handlePointerUp later
     this.input.on('pointerup', this._handlePointerUp, this); 
     // Add resize listener here
-    this.scale.on('resize', this._handleResize, this);
+    this.scale.on('resize', () => { 
+        this._handleResize(); // Call original resize handler
+    }, this);
     this._handleResize(); // Call once for initial screen size
 
   }
@@ -244,7 +246,7 @@ class Main extends Phaser.Scene {
     // Only run game logic if the game is active (past title screen)
     if (this.isGameActive && !this.isGameOver) { 
         this._updateUIIndicators();
-        this._redrawBoundaries(); 
+        // this._redrawBoundaries(); // REMOVED: Don't draw visual walls
         this._checkGameOverCondition();
     }
 
@@ -266,18 +268,20 @@ class Main extends Phaser.Scene {
   updatePieDropper(pie: Pie) {
     this.isDropping = true;
 
-    const targetY = this.CEILING_Y - pie.radius - 10; // Reverted to original calculation
+    const targetY = this.CEILING_Y - pie.radius - 10; // Position above ceiling line
     const centerX = +this.game.config.width / 2;
-    const startY = -pie.radius; // Keep starting above screen
+    const startY = -pie.radius; // REVERTED: Start above screen
+    // const startY = this.topLogo ? this.topLogo.y + this.topLogo.displayHeight / 2 : -pie.radius; 
+    // const startX = this.topLogo ? this.topLogo.x : centerX;
 
     this.dropper
       .setTexture('pie_atlas', pie.assetKey)
       .setName(pie.name)
       .setDisplaySize(pie.radius * 2, pie.radius * 2)
-      .setY(startY) 
-      .setX(centerX)
+      .setPosition(centerX, startY) // REVERTED: Use centerX, startY
       .setVisible(true);
     
+    // Tween to the target position just above the ceiling
     this.tweens.add({
         targets: this.dropper,
         y: targetY,
@@ -423,9 +427,8 @@ class Main extends Phaser.Scene {
     const announcementString = template.replace("{PIE_NAME}", pie.name.toUpperCase());
 
     // Calculate position
-    const baseY = 200;
-    const verticalStep = 10;
-    const targetY = baseY + pieIndex * verticalStep;
+    const playfieldHeight = this.FLOOR_Y - this.CEILING_Y;
+    const targetY = this.CEILING_Y + (playfieldHeight / 3); // NEW: 1/3 down from ceiling
 
     // Create text object
     const announcementText = this.add.text(
@@ -600,27 +603,26 @@ class Main extends Phaser.Scene {
 
   private _createUIElements() {
     // Dropper (initially hidden and using placeholder texture)
-    // We set the correct texture and position in _initializeDropperState
     this.dropper = this.add.image(+this.game.config.width / 2, 100, 'pie_atlas', pies[0].assetKey)
         .setVisible(false)
         .setDepth(5); 
 
-    // Boundary Lines
+    // Boundary Lines (We'll disable drawing later)
     this.boundsGraphics = this.add.graphics();
-    this._redrawBoundaries(); // Initial draw
+    // this._redrawBoundaries(); // Don't draw initially
 
-    // Score Text
-    this.scoreText = this.add.text(this.WALL_OFFSET + 10, 100, '0', this.SCORE_TEXT_STYLE)
+    // Score Text (Add padding since WALL_OFFSET is 0)
+    const padding = 10;
+    this.scoreText = this.add.text(padding, 100, '0', this.SCORE_TEXT_STYLE) // Use padding instead of WALL_OFFSET
         .setOrigin(0, 0.5).setDepth(10);
 
     // --- NEW Ceiling Bar --- 
-    this.ceilingBarGraphics = this.add.graphics({ x: this.WALL_OFFSET, y: this.CEILING_Y - 2.5 }); // Positioned at ceiling line
-    this.ceilingBarGraphics.setDepth(10); // Same depth as score
-    // Initial draw will happen in _initializeGaugeState (renaming it soon)
+    this.ceilingBarGraphics = this.add.graphics({ x: 0, y: this.CEILING_Y - 2.5 }); // Start at x=0
+    this.ceilingBarGraphics.setDepth(10); 
 
     // --- NEW Ceiling Counter --- 
-    const counterX = +this.game.config.width - this.WALL_OFFSET - this.COUNTER_CIRCLE_RADIUS - 10; // Position top-right (Restored)
-    const counterY = this.CEILING_Y - 30; // Position slightly above ceiling line (Restored)
+    const counterX = +this.game.config.width - this.COUNTER_CIRCLE_RADIUS - padding; // Use padding
+    const counterY = this.CEILING_Y - 30; 
     // Background Circle
     this.ceilingCounterBg = this.add.graphics({ x: counterX, y: counterY });
     this.ceilingCounterBg.setDepth(10);
@@ -660,7 +662,7 @@ class Main extends Phaser.Scene {
 
     // Lights (Consider moving to a separate UI/Effects manager)
     this.lights.enable().setAmbientColor(0xdddddd);
-    this.lights.addLight(0, 0, 1000, 0x99ffff, 0.75).setScrollFactor(0); // Placeholder position
+    this.lights.addLight(0, 0, 1000, 0x99ffff, 0.75).setScrollFactor(0);
   }
 
   private _createGameObjectPools() {
@@ -844,7 +846,7 @@ class Main extends Phaser.Scene {
     // Initialize ceiling bar (inactive/green)
     this.ceilingBarGraphics.clear();
     this.ceilingBarGraphics.fillStyle(this.COLOR_GREEN, 1);
-    const barWidth = (+this.game.config.width - this.WALL_OFFSET * 2);
+    const barWidth = +this.game.config.width; // Explicitly use full width
     const barHeight = 5;
     this.ceilingBarGraphics.fillRect(0, 0, barWidth, barHeight);
     // Initialize counter (inactive/green)
@@ -877,7 +879,7 @@ class Main extends Phaser.Scene {
       // Update Ceiling Bar color
       this.ceilingBarGraphics.clear();
       this.ceilingBarGraphics.fillStyle(indicatorColor, 1); // Use selected color
-      const barWidth = (+this.game.config.width - this.WALL_OFFSET * 2);
+      const barWidth = +this.game.config.width; // Explicitly use full width
       const barHeight = 5;
       this.ceilingBarGraphics.fillRect(0, 0, barWidth, barHeight);
 
@@ -960,7 +962,7 @@ class Main extends Phaser.Scene {
   }
 
   private _redrawBoundaries() {
-    // Redraws walls and floor - ceiling line handled by gauge
+    // This method is no longer called, but keep definition for now
     this.boundsGraphics.clear();
     const rightWallX = +this.game.config.width - this.WALL_OFFSET;
     this.boundsGraphics.lineStyle(1, 0xffffff, 1);
@@ -996,15 +998,16 @@ class Main extends Phaser.Scene {
   private _handleResize() {
       const camera = this.cameras.main;
       
-      // Position Score Text
+      // Position Score Text (Use padding)
       if (this.scoreText) {
          const scorePaddingLeft = 10;
          const scoreY = this.CEILING_Y - 30; 
          this.scoreText.setPosition(
-            camera.worldView.x + this.WALL_OFFSET + scorePaddingLeft, 
+            camera.worldView.x + scorePaddingLeft, // Use padding instead of WALL_OFFSET
             scoreY
          );
       }
+      // TODO: Add repositioning for ceiling counter and bar if needed on resize
   }
 
   // ADDED: Method to initialize and start the main game
@@ -1033,15 +1036,9 @@ class Main extends Phaser.Scene {
         }
     });
 
-    // 2. Start Background Animation by adding CSS class
-    const appElement = document.getElementById('app');
-    if (appElement) {
-        appElement.classList.add('background-in-place');
-    }
-
     // 3. Setup Main Game (with a slight delay)
     this.time.delayedCall(200, () => { 
-        // Matter world setup (Needs to exist before adding game objects)
+        // Matter world setup
         this.matter.world.setBounds(this.WALL_OFFSET, this.CEILING_Y, +this.game.config.width - (this.WALL_OFFSET * 2), this.FLOOR_Y - this.CEILING_Y); 
         this.matter.world.setGravity(0, 4); // Use game gravity
 
@@ -1060,6 +1057,16 @@ class Main extends Phaser.Scene {
 
         // --- Create UI Elements ---
         this._createUIElements();
+
+        // --- ADD Top Logo --- 
+        const topLogoX = +this.game.config.width / 2;
+        const topLogoY = 0; // REVERTED: Start at the very top
+        // Assign created logo to class property
+        this.topLogo = this.add.image(topLogoX, topLogoY, 'toplogo')
+            .setOrigin(0.5, 0) // REVERTED: Anchor top-center
+            .setScale(0.60) 
+            .setDepth(5); 
+        // --- End Add Top Logo ---
 
         // --- Create Object Pools ---
         this._createGameObjectPools();
@@ -1087,7 +1094,7 @@ class Main extends Phaser.Scene {
 // Phaser game configuration
 const config: Types.Core.GameConfig = {
   type: Phaser.AUTO,
-  width: 720,      
+  width: 560, // NEW NARROWER WIDTH
   height: 1000,
   parent: "app",     
   transparent: true, // Make canvas transparent to see CSS background
@@ -1101,7 +1108,7 @@ const config: Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH, 
-    width: 720, 
+    width: 560, // NEW NARROWER WIDTH
     height: 1000,
   },
   scene: Main, 
