@@ -414,7 +414,7 @@ class Main extends Phaser.Scene {
     pieB.once('destroy', () => { if (tweenB && tweenB.isPlaying()) { tweenB.stop(); } });
   }
 
-  announceNewPie(pie: Pie, pieIndex: number) {
+  announceNewPie(pie: Pie) {
     if (this.isAnnouncing) return;
     this.isAnnouncing = true;
 
@@ -965,7 +965,7 @@ class Main extends Phaser.Scene {
       // Check if this pie type needs its announcement
       if (!this.announcedPieIndices.has(pieIndex)) {
           this.announcedPieIndices.add(pieIndex);
-          this.announceNewPie(pie, pieIndex);
+          this.announceNewPie(pie);
       }
       // Separately, check if it needs to be added to the droppable pool
       if (!this.droppablePieIndices.includes(pieIndex)) {
