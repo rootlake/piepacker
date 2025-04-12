@@ -37,7 +37,7 @@ class Main extends Phaser.Scene {
   private readonly CEILING_Y = 150;
   private readonly FLOOR_Y = 900;
   private readonly WALL_OFFSET = 65;
-  private readonly MAX_CEILING_TOUCHES = 10;
+  private readonly MAX_CEILING_TOUCHES = 10; // Reverted back (was 3 for testing)
   private readonly INITIAL_DROPPER_RANGE_MAX_INDEX = 7;
   private readonly SCORE_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
     fontFamily: 'sans-serif',
@@ -89,12 +89,14 @@ class Main extends Phaser.Scene {
     0xF5EB02, 0xF5C913, 0xF6951E, 0xF15B22, 0xE92A28
   ];
   private readonly STABLE_TOUCH_DURATION = 250; // ms duration for a touch to count
+  private readonly STRAIN_SOUND_INTERVAL = 5000; // Minimum ms between strain sounds
+  private readonly SIGH_DELAY_MS = 3000; // Minimum ms at zero before sigh plays
 
   // --- State & Game Objects ---
   score = 0;
   dropper!: Phaser.GameObjects.Image;
   group!: Phaser.GameObjects.Group;
-  gameOver = false;
+  isGameOver = false;
   scoreText!: Phaser.GameObjects.Text;
   isDropping = false;
   announcedPieIndices: Set<number> = new Set();
@@ -115,6 +117,10 @@ class Main extends Phaser.Scene {
   ceilingCounterText!: Phaser.GameObjects.Text;
   ceilingCounterBg!: Phaser.GameObjects.Graphics;
   _currentDisplayedCeilingCount = 0;
+  private _lastStrainSoundPlayTime: { [key: string]: number } = {}; // Timestamps for rate limiting
+  private _hasReachedSighThreshold: boolean = false; // Added for sigh sound logic
+  private _timeAtZeroStart: number | null = null; // Tracks when count first hit zero
+  // titleText!: Phaser.GameObjects.Text; // Title removed earlier
 
   // --- Lifecycle Methods ---
   preload() {
@@ -122,40 +128,82 @@ class Main extends Phaser.Scene {
     this.load.atlas('pie_atlas', 'assets/sprites/pie_atlas.png', 'assets/sprites/pie_atlas.json');
 
     // Load sounds with updated paths
-    this.load.audio('squish', ['assets/sounds/squish1.ogg', 'assets/sounds/squish1.aac']);
-    this.load.audio('merge', ['assets/sounds/merge1.ogg', 'assets/sounds/merge1.aac']);
+    // this.load.audio('creak', ['assets/sounds/creak1.ogg', 'assets/sounds/creak1.aac']);
+    // this.load.audio('merge', ['assets/sounds/merge1.ogg', 'assets/sounds/merge1.aac']);
+    // this.load.audio('squish', ['assets/sounds/squish1.ogg', 'assets/sounds/squish1.aac']); // Keep commented for now
     this.load.audio('wompwomp', ['assets/sounds/wompwomp.ogg', 'assets/sounds/wompwomp.aac']);
-    this.load.audio('pop1', ['assets/sounds/pop1.ogg', 'assets/sounds/pop1.aac']);
-    this.load.audio('pop2', ['assets/sounds/pop2.ogg', 'assets/sounds/pop2.aac']); 
-    this.load.audio('pop3', ['assets/sounds/pop3.ogg', 'assets/sounds/pop3.aac']);
-    this.load.audio('pop4', ['assets/sounds/pop4.ogg', 'assets/sounds/pop4.aac']);
-    this.load.audio('pop5', ['assets/sounds/pop5.ogg', 'assets/sounds/pop5.aac']);
-    this.load.audio('pop6', ['assets/sounds/pop6.ogg', 'assets/sounds/pop6.aac']);
+
+    // Load single pop sound
+    this.load.audio('pop', ['assets/sounds/pop.ogg', 'assets/sounds/pop.aac']);
+
+    // Load squeak/strain sounds
+    this.load.audio('squeak1', ['assets/sounds/squeak1.ogg', 'assets/sounds/squeak1.aac']);
+    this.load.audio('squeak2', ['assets/sounds/squeak2.ogg', 'assets/sounds/squeak2.aac']);
+    this.load.audio('squeak3', ['assets/sounds/squeak3.ogg', 'assets/sounds/squeak3.aac']);
+
+    // Load sigh sound
+    this.load.audio('sigh', ['assets/sounds/sigh.ogg', 'assets/sounds/sigh.aac']);
+    // REMOVED other pop loads
+    // this.load.audio('pop1', ['assets/sounds/pop1.ogg', 'assets/sounds/pop1.aac']);
+    // this.load.audio('pop2', ['assets/sounds/pop2.ogg', 'assets/sounds/pop2.aac']);
+    // this.load.audio('pop4', ['assets/sounds/pop4.ogg', 'assets/sounds/pop4.aac']);
+    // this.load.audio('pop5', ['assets/sounds/pop5.ogg', 'assets/sounds/pop5.aac']);
+    // this.load.audio('pop6', ['assets/sounds/pop6.ogg', 'assets/sounds/pop6.aac']);
   }
 
   create() {
-    this._initializeProperties();
-    this._setupPhysics();
+    console.log("Running create...");
+
+    // Matter world setup
+    this.matter.world.setBounds(this.WALL_OFFSET, this.CEILING_Y, +this.game.config.width - (this.WALL_OFFSET * 2), this.FLOOR_Y - this.CEILING_Y); 
+    this.matter.world.setGravity(0, 1.5);
+
+    // Create Pies Group
+    this.group = this.add.group();
+
+    // --- Create Ceiling Sensor ---
+    const sensorY = this.CEILING_Y - 1;
+    this.ceilingSensorBody = this.matter.add.rectangle(
+      +this.game.config.width / 2,
+      sensorY,
+      +this.game.config.width - (this.WALL_OFFSET * 2),
+      5, // Small height for the sensor
+      { isStatic: true, isSensor: true, label: 'ceilingSensor' }
+    );
+
+    // --- Create UI Elements ---
     this._createUIElements();
+
+    // --- Create Object Pools ---
     this._createGameObjectPools();
-    this._setupInputHandling();
-    this._setupCollisionListeners();
 
-    // Initial state setup that needs objects to exist
+    // --- Collision Handling ---
+    this.matter.world.on('collisionstart', this._handleCollisionStart, this);
+    // Add back listeners needed for ceiling sensor
+    this.matter.world.on('collisionactive', this._handleCollisionActive, this);
+    this.matter.world.on('collisionend', this._handleCollisionEnd, this);
+
+    // --- Input Handling ---
+    this.input.on('pointerup', this._handlePointerUp, this);
+
+    // --- Initial Game State ---
     this._initializeDropperState();
-    this._initializeGaugeState(); // Includes initial score draw
+    this._initializeGaugeState();
 
-    // Re-add Resize Handling
+    // --- Resize Handling ---
     this.scale.on('resize', this._handleResize, this);
-    this._handleResize(); // Call once initially to position elements
+    this._handleResize();
+
+    // --- Game Over State Reset ---
+    this.isGameOver = false;
   }
 
-  update(/* REMOVED commented-out parameters */) {
-    if (this.gameOver) return;
-
-    this._updateUIIndicators();
-    this._checkGameOverCondition();
-    this._redrawBoundaries(); // Optional: Could be removed if static
+  update(/* time: number, delta: number */) {
+    if (!this.isGameOver) {
+        this._updateUIIndicators();
+        this._redrawBoundaries(); // Use correct method name
+        this._checkGameOverCondition();
+    }
   }
 
   // --- Core Gameplay Methods ---
@@ -225,6 +273,10 @@ class Main extends Phaser.Scene {
     const largeMergeThreshold = 5; // Consider constant
     const ringDelay = 50; // Consider constant
 
+    // Keep references to tweens
+    let tweenA: Phaser.Tweens.Tween | null = null;
+    let tweenB: Phaser.Tweens.Tween | null = null;
+
     let completedTweens = 0;
     const totalTweens = 2;
 
@@ -257,9 +309,20 @@ class Main extends Phaser.Scene {
             });
         }
 
-        // Remove old pies, add new one
-        this.group.remove(pieA, true, true);
-        this.group.remove(pieB, true, true);
+        // More robust cleanup BEFORE destroying old pies
+        if (tweenA && tweenA.isPlaying()) { tweenA.stop(); }
+        if (tweenB && tweenB.isPlaying()) { tweenB.stop(); }
+
+        if (pieA.body) { this.matter.world.remove(pieA.body); }
+        if (pieB.body) { this.matter.world.remove(pieB.body); }
+
+        // Now destroy GameObjects
+        if (pieA.active) { pieA.destroy(); }
+        if (pieB.active) { pieB.destroy(); }
+
+        // --- End Robust Cleanup ---
+
+        // Create and animate new pie
         const newGameObject = this.addPie(mergeX, mergeY, nextPie);
         const finalWidth = nextPie.radius * 2;
         const finalHeight = nextPie.radius * 2;
@@ -283,8 +346,12 @@ class Main extends Phaser.Scene {
     };
 
     // Shrink/spin tweens for original pies
-    this.tweens.add({ targets: pieA, scale: 0, angle: pieA.angle + 360, x: mergeX, y: mergeY, duration: shrinkDuration, ease: 'Sine.InOut', onComplete: onTweenComplete });
-    this.tweens.add({ targets: pieB, scale: 0, angle: pieB.angle - 360, x: mergeX, y: mergeY, duration: shrinkDuration, ease: 'Sine.InOut', onComplete: onTweenComplete });
+    tweenA = this.tweens.add({ targets: pieA, scale: 0, angle: pieA.angle + 360, x: mergeX, y: mergeY, duration: shrinkDuration, ease: 'Sine.InOut', onComplete: onTweenComplete });
+    tweenB = this.tweens.add({ targets: pieB, scale: 0, angle: pieB.angle - 360, x: mergeX, y: mergeY, duration: shrinkDuration, ease: 'Sine.InOut', onComplete: onTweenComplete });
+
+    // Stop tweens if objects destroyed prematurely (e.g., game over)
+    pieA.once('destroy', () => { if (tweenA && tweenA.isPlaying()) { tweenA.stop(); } });
+    pieB.once('destroy', () => { if (tweenB && tweenB.isPlaying()) { tweenB.stop(); } });
   }
 
   announceNewPie(pie: Pie, pieIndex: number) {
@@ -339,8 +406,8 @@ class Main extends Phaser.Scene {
   }
 
   triggerGameOver() {
-    if (this.gameOver) return;
-    this.gameOver = true;
+    if (this.isGameOver) return;
+    this.isGameOver = true;
     this.dropper.setVisible(false);
     this.sound.play('wompwomp', { volume: 0.7 });
 
@@ -401,9 +468,10 @@ class Main extends Phaser.Scene {
                     onComplete: () => {
                         // Stop tween explicitly before destroy
                         if (explodeTween && explodeTween.isPlaying()) { explodeTween.stop(); }
-                        // Check body exists before destroy
+                        // Check body exists, remove from world, then destroy GameObject
                         if (matterPieObject.active && matterPieObject.body) { 
-                           matterPieObject.destroy(); 
+                           this.matter.world.remove(matterPieObject.body); // Remove body from Matter world
+                           matterPieObject.destroy(); // Destroy the GameObject
                         }
                         animationsRemaining--;
                         onAllAnimationsComplete(); // Check if all done
@@ -480,7 +548,7 @@ class Main extends Phaser.Scene {
     this.group = this.add.group();
 
     // Initialize state
-    this.gameOver = false;
+    this.isGameOver = false;
     this.isDropping = false;
     this.isAnnouncing = false;
     this.announcedPieIndices.clear();
@@ -522,6 +590,12 @@ class Main extends Phaser.Scene {
   }
 
   private _createUIElements() {
+    // Dropper (initially hidden and using placeholder texture)
+    // We set the correct texture and position in _initializeDropperState
+    this.dropper = this.add.image(+this.game.config.width / 2, 100, 'pie_atlas', pies[0].assetKey)
+        .setVisible(false)
+        .setDepth(5); 
+
     // Boundary Lines
     this.boundsGraphics = this.add.graphics();
     this._redrawBoundaries(); // Initial draw
@@ -617,7 +691,7 @@ class Main extends Phaser.Scene {
       }
 
       // Input validation
-      if (pointer.y < this.CEILING_Y || !this.dropper.visible || this.gameOver || this.isDropping) {
+      if (pointer.y < this.CEILING_Y || !this.dropper.visible || this.isGameOver || this.isDropping) {
         return;
       }
 
@@ -650,30 +724,19 @@ class Main extends Phaser.Scene {
   }
 
   private _selectAndUpdateNextDropperPie() {
+      // REMOVED TEMPORARY TESTING: Drop only large pies
+      // const minDropIndex = 10; 
+      // const maxDropIndex = pies.length - 1;
+      // const nextPieIndex = Phaser.Math.RND.between(minDropIndex, maxDropIndex);
+      // const nextPie = pies[nextPieIndex];
+      // this.updatePieDropper(nextPie);
+      // --- END TEMPORARY TESTING ---
+
       // Restore original random limited logic:
       const availableToDrop = this.droppablePieIndices.filter(index => index <= this.INITIAL_DROPPER_RANGE_MAX_INDEX);
       const nextPieIndex = Phaser.Math.RND.pick(availableToDrop);
       const nextPie = pies[nextPieIndex];
       this.updatePieDropper(nextPie);
-
-      // TESTING: Select MID-RANGE pie randomly
-      // const minDropIndex = 5;
-      // const maxDropIndex = 12;
-      // const nextPieIndex = Phaser.Math.RND.between(minDropIndex, maxDropIndex);
-      // const nextPie = pies[nextPieIndex];
-      // this.updatePieDropper(nextPie);
-      // --- END TESTING ---
-
-      // Original ANY pie random logic:
-      // const nextPieIndex = Phaser.Math.RND.between(0, pies.length - 1);
-      // const nextPie = pies[nextPieIndex];
-      // this.updatePieDropper(nextPie);
-
-      // Original sequential logic:
-      // const nextPieIndex = this._nextDropIndex;
-      // this._nextDropIndex = (this._nextDropIndex + 1) % pies.length; // Increment and wrap
-      // const nextPie = pies[nextPieIndex];
-      // this.updatePieDropper(nextPie);
   }
 
   private _setupCollisionListeners() {
@@ -721,7 +784,7 @@ class Main extends Phaser.Scene {
                   if (newPieObject) { newPieObject.setData('isNew', false); }
               }
 
-              // Check for merge condition - RE-ENABLING
+              // RE-ENABLING MERGING
               if (gameObjectA.name === gameObjectB.name &&
                   this.group.contains(gameObjectA) && this.group.contains(gameObjectB) &&
                   !gameObjectA.getData('isMerging') && !gameObjectB.getData('isMerging')
@@ -733,15 +796,16 @@ class Main extends Phaser.Scene {
 
                   if (pieIndex < pies.length - 1) { // Not largest pie
                       const nextPie = pies[pieIndex + 1];
-                      const soundKey = 'pop3'; 
-                      // Calculate detune based on pie size (index 0 = highest pitch, index max = lowest)
+                      const soundKey = 'pop'; // Restore pop sound
+                      // Calculate detune based on pie size (index 0 = lowest pitch, index max = highest)
                       const maxDetune = 600; // Max detune in cents (+/- 6 semitones)
                       const progress = pieIndex / (pies.length - 2); // 0 to 1 based on index
-                      const detuneValue = maxDetune - (progress * maxDetune * 2);
+                      const detuneValue = -maxDetune + (progress * maxDetune * 2); // New: low -> high
 
+                      // Restore pitch-shifted pop sound
                       this.sound.play(soundKey, { 
-                          volume: 0.5, 
-                          detune: Math.round(detuneValue) // Round to nearest cent
+                          volume: 0.5,
+                          detune: Math.round(detuneValue) // Restore detune
                       });
                       this.animateMerge(
                           gameObjectA as Phaser.Physics.Matter.Image,
@@ -774,25 +838,16 @@ class Main extends Phaser.Scene {
   }
 
   private _initializeDropperState() {
+    // REMOVED TEMPORARY TESTING: Drop only large pies initially too
+    // const minDropIndex = 10; 
+    // const maxDropIndex = pies.length - 1;
+    // const initialPieIndex = Phaser.Math.RND.between(minDropIndex, maxDropIndex);
+    // this.updatePieDropper(pies[initialPieIndex]);
+    // --- END TEMPORARY TESTING ---
+
     // Restore original random limited logic:
     const initialDroppableRange = this.droppablePieIndices.filter(index => index <= this.INITIAL_DROPPER_RANGE_MAX_INDEX);
     this.updatePieDropper(pies[Phaser.Math.RND.pick(initialDroppableRange)]);
-
-    // TESTING: Drop MID-RANGE pies randomly
-    // const minDropIndex = 5;
-    // const maxDropIndex = 12;
-    // const initialPieIndex = Phaser.Math.RND.between(minDropIndex, maxDropIndex);
-    // this.updatePieDropper(pies[initialPieIndex]);
-    // --- END TESTING ---
-
-    // Original ANY pie random logic:
-    // const initialPieIndex = Phaser.Math.RND.between(0, pies.length - 1);
-    // this.updatePieDropper(pies[initialPieIndex]);
-
-    // Original sequential logic:
-    // const initialPieIndex = this._nextDropIndex;
-    // this._nextDropIndex = (this._nextDropIndex + 1) % pies.length; // Increment and wrap for next time
-    // this.updatePieDropper(pies[initialPieIndex]);
 
     // Dropper glow effect
     const glow = this.dropper.postFX.addGlow(0x99ddff);
@@ -823,6 +878,7 @@ class Main extends Phaser.Scene {
   private _updateUIIndicators() {
       const currentTime = this.time.now;
       let stableTouchCount = 0;
+      // REMOVED previous count check, not needed for range/rate-limit logic
 
       // Count pies touching for the required duration
       for (const touchStartTime of this._ceilingTouchTimers.values()) {
@@ -831,26 +887,12 @@ class Main extends Phaser.Scene {
            }
       }
 
-      // High-water mark logic based on STABLE touches
-      if (stableTouchCount > this._currentDisplayedCeilingCount) {
-          this._currentDisplayedCeilingCount = stableTouchCount;
-      } else if (this._ceilingTouchTimers.size === 0) { // Reset only if map is EMPTY
-          this._currentDisplayedCeilingCount = 0;
-      }
-
-      // Determine the display color based on the stable count
-      let finalColor: number;
-      if (this._currentDisplayedCeilingCount === 0) {
-          finalColor = this.COLOR_GREEN;
-      } else {
-          // Map count 1-10 to array index 0-9
-          const colorIndex = Phaser.Math.Clamp(this._currentDisplayedCeilingCount - 1, 0, this.INDICATOR_COLORS.length - 1);
-          finalColor = this.INDICATOR_COLORS[colorIndex];
-      }
+      // Directly update the displayed count to match the current stable count
+      this._currentDisplayedCeilingCount = stableTouchCount;
 
       // Update Ceiling Bar color
       this.ceilingBarGraphics.clear();
-      this.ceilingBarGraphics.fillStyle(finalColor, 1); // Use selected discrete color
+      this.ceilingBarGraphics.fillStyle(this.COLOR_GREEN, 1); // Use selected discrete color
       const barWidth = (+this.game.config.width - this.WALL_OFFSET * 2);
       const barHeight = 5;
       this.ceilingBarGraphics.fillRect(0, 0, barWidth, barHeight);
@@ -860,8 +902,37 @@ class Main extends Phaser.Scene {
 
       // Update Counter Background color
       this.ceilingCounterBg.clear();
-      this.ceilingCounterBg.fillStyle(finalColor, 1); // Use selected discrete color
+      this.ceilingCounterBg.fillStyle(this.COLOR_GREEN, 1); // Use selected discrete color
       this.ceilingCounterBg.fillCircle(0, 0, this.COUNTER_CIRCLE_RADIUS);
+
+      // Play strain sounds based on ranges and rate limiting
+      this._playStrainSounds(this._currentDisplayedCeilingCount);
+
+      // --- Sigh Sound Logic --- 
+      // Check if threshold was reached (Set flag)
+      if (this._currentDisplayedCeilingCount >= 3) {
+        this._hasReachedSighThreshold = true;
+        this._timeAtZeroStart = null; // Reset timer if count goes high again
+      }
+
+      // Check if count is 0 AND threshold was reached
+      if (this._currentDisplayedCeilingCount === 0 && this._hasReachedSighThreshold) {
+          // Start timer if it hasn't started yet
+          if (this._timeAtZeroStart === null) {
+              this._timeAtZeroStart = currentTime;
+          }
+          // Check if enough time has passed
+          if (currentTime - this._timeAtZeroStart >= this.SIGH_DELAY_MS) {
+              this.sound.play('sigh', { volume: 0.6 }); // Play sigh sound
+              this._hasReachedSighThreshold = false; // Reset flag
+              this._timeAtZeroStart = null; // Reset timer
+          }
+      }
+      // Reset timer if count goes above 0
+      if (this._currentDisplayedCeilingCount > 0) {
+          this._timeAtZeroStart = null;
+      }
+      // --- End Sigh Sound Logic ---
   }
 
   private _checkGameOverCondition() {
@@ -918,6 +989,32 @@ class Main extends Phaser.Scene {
             scoreY
          );
       }
+  }
+
+  // Updated helper function to play strain sounds based on ranges with rate limiting
+  private _playStrainSounds(currentCount: number) {
+    const ranges = [
+      { min: 2, max: 4, key: 'squeak1', volume: 0.4 },
+      { min: 5, max: 7, key: 'squeak2', volume: 0.6 },
+      { min: 8, max: 10, key: 'squeak3', volume: 0.8 }
+    ];
+    const currentTime = this.time.now;
+
+    for (const range of ranges) {
+        if (currentCount >= range.min && currentCount <= range.max) {
+            const soundKey = range.key;
+            const lastPlayTime = this._lastStrainSoundPlayTime[soundKey] || 0;
+
+            // Check if interval has passed
+            if (currentTime - lastPlayTime > this.STRAIN_SOUND_INTERVAL) {
+                // console.log(`Playing strain sound: ${soundKey} for count ${currentCount}`);
+                this.sound.play(soundKey, { volume: range.volume });
+                this._lastStrainSoundPlayTime[soundKey] = currentTime; // Update last play time
+            }
+            // If count is in this range, don't check lower ranges
+            break; 
+        }
+    }
   }
 
 } // End of Main Scene
