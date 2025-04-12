@@ -3,7 +3,6 @@ import "./style.css";
 // Add specific Phaser imports for clarity and type checking
 import Phaser, { Types } from 'phaser';
 // import { experimentalPhysics } from './physics'; // Remove incorrect import
-import { announcementTemplates } from './announcements'; // Import the templates
 import { Pie, pies } from './pies'; // Import pie data
 
 
@@ -66,14 +65,6 @@ class Main extends Phaser.Scene {
     color: '#ffffff',
     stroke: '#000000',
     strokeThickness: 3
-  };
-  private readonly ANNOUNCEMENT_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
-      fontFamily: 'sans-serif',
-      fontSize: '40px',
-      color: '#ffffff',
-      stroke: '#000000',
-      strokeThickness: 3,
-      align: 'center'
   };
   private readonly COUNTER_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
       fontFamily: 'sans-serif',
@@ -466,7 +457,7 @@ class Main extends Phaser.Scene {
     pieB.once('destroy', () => { if (tweenB && tweenB.isPlaying()) { tweenB.stop(); } });
   }
 
-  announceNewPie(pie: Pie, pieIndex: number) {
+  announceNewPie(pie: Pie, /* pieIndex: number */) { // REMOVED unused pieIndex parameter again
     if (this.isAnnouncing) return;
     this.isAnnouncing = true;
 
@@ -783,7 +774,7 @@ class Main extends Phaser.Scene {
             const MAX_ANNOUNCE_INDEX = 3;
             if (droppedPieIndex <= MAX_ANNOUNCE_INDEX && !this.announcedPieIndices.has(droppedPieIndex)) {
                 this.announcedPieIndices.add(droppedPieIndex);
-                this.announceNewPie(currentPie, droppedPieIndex); 
+                this.announceNewPie(currentPie); 
             }
             // --- End Dropped Pie Announcement Check ---
 
@@ -1040,7 +1031,7 @@ class Main extends Phaser.Scene {
       // if (pieIndex <= MAX_ANNOUNCE_INDEX && !this.announcedPieIndices.has(pieIndex)) { // Old check
       if (!this.announcedPieIndices.has(pieIndex)) { // NEW check: Announce any pie first time
           this.announcedPieIndices.add(pieIndex);
-          this.announceNewPie(pie, pieIndex); 
+          this.announceNewPie(pie); 
       }
 
       // Always add the index of the *created* pie to droppable (if not already there)
