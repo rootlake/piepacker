@@ -36,9 +36,9 @@ class Main extends Phaser.Scene {
   // --- Constants ---
   private readonly CEILING_Y = 220; // Lowered further to accommodate dropper below scaled top logo
   private readonly FLOOR_Y = 995; // REVERTED floor back low
-  private readonly WALL_OFFSET = 0; // Walls extend to canvas edge
+  private readonly WALL_OFFSET = 15; // REDUCED offset (wider playfield)
   private readonly MAX_CEILING_TOUCHES = 10; // Reverted back (was 3 for testing)
-  private readonly INITIAL_DROPPER_RANGE_MAX_INDEX = 7;
+  private readonly INITIAL_DROPPER_RANGE_MAX_INDEX = 3; // NEW: Only drop first 4 pies initially
   private readonly SCORE_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
     fontFamily: 'sans-serif',
     fontSize: '56px',
@@ -91,6 +91,17 @@ class Main extends Phaser.Scene {
   private readonly STABLE_TOUCH_DURATION = 500; // ms a pie must touch before counting
   private readonly STRAIN_SOUND_INTERVAL = 5000; // ms between strain sounds
   
+  // Announcement style constant (can be moved near others if preferred)
+  private readonly NEW_ANNOUNCEMENT_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
+      fontFamily: '"Arial Black", sans-serif', // Use Arial Black primarily
+      fontSize: '48px',
+      color: '#FFFF99', // Light yellow
+      stroke: '#663300',
+      strokeThickness: 4,
+      align: 'center',
+      letterSpacing: -2 // ADDED: Tighten letter spacing
+  };
+  
   // --- State & Game Objects ---
   score = 0;
   dropper!: Phaser.GameObjects.Image;
@@ -105,10 +116,11 @@ class Main extends Phaser.Scene {
   flashPool!: Phaser.GameObjects.Group;
   gameOverText!: Phaser.GameObjects.Text; 
   playAgainButtonContainer!: Phaser.GameObjects.Container;
+  pieFragmentPool!: Phaser.GameObjects.Group;
   finalScoreText!: Phaser.GameObjects.Text; 
   muteButtonContainer!: Phaser.GameObjects.Container; // Keep commented out usage later
   restartButtonContainer!: Phaser.GameObjects.Container; // Keep commented out usage later
-  droppablePieIndices: number[] = [0, 1, 2, 3, 4, 5, 6, 7];
+  droppablePieIndices: number[] = [0, 1, 2, 3]; // NEW: Start with only first 4 indices
   ceilingBody!: MatterJS.BodyType;
   boundsGraphics!: Phaser.GameObjects.Graphics;
   ceilingSensorBody!: MatterJS.BodyType;
@@ -369,6 +381,46 @@ class Main extends Phaser.Scene {
             });
         }
 
+        // --- Pie Fragment Particle Burst --- 
+        const mergingPieTextureKey = pieA.texture.key; 
+        const mergingPieFrameName = pieA.frame.name; 
+        const numParticles = (3 + pieIndex) * 2; // NEW formula (doubled)
+
+        for (let i = 0; i < numParticles; i++) {
+            const particle = this.pieFragmentPool.get(mergeX, mergeY) as Phaser.GameObjects.Image;
+            if (!particle) continue; // Skip if pool is empty (shouldn't happen)
+
+            particle
+                .setTexture(mergingPieTextureKey, mergingPieFrameName) // Set correct texture
+                .setOrigin(0.5)
+                .setDepth(10) // Ensure visibility
+                .setScale(0.3) // NEW: Start small but visible
+                .setAlpha(1)
+                .setActive(true)
+                .setVisible(true);
+
+            // Animation properties
+            const angle = Phaser.Math.DegToRad(Phaser.Math.RND.between(0, 360));
+            const distance = Phaser.Math.RND.between(100, 200); // NEW further range
+            const duration = Phaser.Math.RND.between(500, 800);
+            const targetX = mergeX + Math.cos(angle) * distance;
+            const targetY = mergeY + Math.sin(angle) * distance;
+
+            this.tweens.add({
+                targets: particle,
+                x: targetX,
+                y: targetY,
+                scale: 0, // NEW: Shrink to nothing
+                angle: Phaser.Math.RND.between(-360, 360), // Random rotation
+                duration: duration,
+                ease: 'Quad.Out',
+                onComplete: () => {
+                    this.pieFragmentPool.killAndHide(particle);
+                }
+            });
+        }
+        // --- End Particle Burst ---
+
         // More robust cleanup BEFORE destroying old pies
         if (tweenA && tweenA.isPlaying()) { tweenA.stop(); }
         if (tweenB && tweenB.isPlaying()) { tweenB.stop(); }
@@ -414,29 +466,24 @@ class Main extends Phaser.Scene {
     pieB.once('destroy', () => { if (tweenB && tweenB.isPlaying()) { tweenB.stop(); } });
   }
 
-  announceNewPie(pie: Pie) {
+  announceNewPie(pie: Pie, pieIndex: number) {
     if (this.isAnnouncing) return;
     this.isAnnouncing = true;
 
-    // Select template
-    if (this.availableTemplates.length === 0) {
-        this.availableTemplates = [...announcementTemplates];
-        Phaser.Utils.Array.Shuffle(this.availableTemplates);
-    }
-    const template = this.availableTemplates.pop() || "{PIE_NAME} UNLOCKED!";
-    const announcementString = template.replace("{PIE_NAME}", pie.name.toUpperCase());
+    // Use just the pie name
+    const announcementString = pie.name.toUpperCase();
 
-    // Calculate position
+    // Calculate position (unchanged)
     const playfieldHeight = this.FLOOR_Y - this.CEILING_Y;
-    const targetY = this.CEILING_Y + (playfieldHeight / 3); // NEW: 1/3 down from ceiling
+    const targetY = this.CEILING_Y + (playfieldHeight / 3); 
 
-    // Create text object
+    // Create text object using NEW style
     const announcementText = this.add.text(
-        +this.game.config.width / 2, targetY, announcementString, this.ANNOUNCEMENT_TEXT_STYLE
+        +this.game.config.width / 2, targetY, announcementString, this.NEW_ANNOUNCEMENT_TEXT_STYLE
     ).setOrigin(0.5).setAlpha(0).setScale(0.5).setDepth(10)
-     .setShadow(2, 2, '#000000', 2, true, true);
+     // .setShadow(2, 2, '#000000', 2, true, true); // Optionally remove shadow
 
-    // Word wrapping
+    // Word wrapping (Might not be needed if names are short)
     const playAreaWidth = +this.game.config.width - (this.WALL_OFFSET * 2);
     const textPadding = 40; 
     const maxWidth = playAreaWidth - textPadding; 
@@ -676,6 +723,22 @@ class Main extends Phaser.Scene {
           const flash = this.add.circle(0, 0, 10, 0xffffff, 0.8).setActive(false).setVisible(false);
           this.flashPool.add(flash, true);
       }
+
+      // Pie Fragment Particle Pool
+      this.pieFragmentPool = this.add.group({
+          // Use Image class, as fragments use pie textures
+          classType: Phaser.GameObjects.Image, 
+          maxSize: 30, // Max particles needed (e.g., 3 + largest pie index)
+          runChildUpdate: false // No automatic update needed
+      });
+      for (let i = 0; i < 30; i++) {
+          // Create inactive placeholder images with a default texture
+          const fragment = this.add.image(0, 0, 'pie_atlas', pies[0].assetKey)
+            .setActive(false)
+            .setVisible(false)
+            .setDepth(10); // Ensure particles are above merged pies
+          this.pieFragmentPool.add(fragment, true); // Add inactive to pool
+      }
   }
 
   private _handlePointerUp(pointer: Phaser.Input.Pointer) {
@@ -715,6 +778,15 @@ class Main extends Phaser.Scene {
             gameObject.setData('initialY', this.CEILING_Y + 5);
             this.group.add(gameObject);
 
+            // --- Check if dropped pie needs announcement (Indices 0-3 only) ---
+            const droppedPieIndex = pies.findIndex(p => p.name === currentPie.name);
+            const MAX_ANNOUNCE_INDEX = 3;
+            if (droppedPieIndex <= MAX_ANNOUNCE_INDEX && !this.announcedPieIndices.has(droppedPieIndex)) {
+                this.announcedPieIndices.add(droppedPieIndex);
+                this.announceNewPie(currentPie, droppedPieIndex); 
+            }
+            // --- End Dropped Pie Announcement Check ---
+
             // Select next pie and update dropper
             this._selectAndUpdateNextDropperPie();
             this.isDropping = false;
@@ -723,7 +795,7 @@ class Main extends Phaser.Scene {
   }
 
   private _selectAndUpdateNextDropperPie() {
-      // Restore original random limited logic:
+      // Only drop pies up to the max index allowed initially
       const availableToDrop = this.droppablePieIndices.filter(index => index <= this.INITIAL_DROPPER_RANGE_MAX_INDEX);
             const nextPieIndex = Phaser.Math.RND.pick(availableToDrop);
             const nextPie = pies[nextPieIndex];
@@ -826,7 +898,7 @@ class Main extends Phaser.Scene {
   }
 
   private _initializeDropperState() {
-    // Restore original random limited logic:
+    // Start with a random pie from the initial allowed range
     const initialDroppableRange = this.droppablePieIndices.filter(index => index <= this.INITIAL_DROPPER_RANGE_MAX_INDEX);
     this.updatePieDropper(pies[Phaser.Math.RND.pick(initialDroppableRange)]);
 
@@ -962,14 +1034,21 @@ class Main extends Phaser.Scene {
   }
 
   private _checkAndAnnounceNewPie(pie: Pie, pieIndex: number) {
-      // Check if this pie type needs its announcement
-      if (!this.announcedPieIndices.has(pieIndex)) {
+      // const MAX_ANNOUNCE_INDEX = 3; // REMOVED index limit
+
+      // Announce if this pie index hasn't been announced yet
+      // if (pieIndex <= MAX_ANNOUNCE_INDEX && !this.announcedPieIndices.has(pieIndex)) { // Old check
+      if (!this.announcedPieIndices.has(pieIndex)) { // NEW check: Announce any pie first time
           this.announcedPieIndices.add(pieIndex);
-          this.announceNewPie(pie);
+          this.announceNewPie(pie, pieIndex); 
       }
-      // Separately, check if it needs to be added to the droppable pool
+
+      // Always add the index of the *created* pie to droppable (if not already there)
+      // This allows pies > 3 to become droppable after being merged
       if (!this.droppablePieIndices.includes(pieIndex)) {
           this.droppablePieIndices.push(pieIndex);
+          // Optional: Sort if you want droppable list ordered (might not be necessary)
+          // this.droppablePieIndices.sort((a, b) => a - b);
       }
   }
 
