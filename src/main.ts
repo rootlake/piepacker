@@ -36,7 +36,7 @@ class Main extends Phaser.Scene {
   private readonly CEILING_Y = 220; // Lowered further to accommodate dropper below scaled top logo
   private readonly FLOOR_Y = 995; // REVERTED floor back low
   private readonly WALL_OFFSET = 15; // REDUCED offset (wider playfield)
-  private readonly MAX_CEILING_TOUCHES = 10; // Reverted back (was 3 for testing)
+  private readonly MAX_CEILING_TOUCHES = 6; // NEW: Lower limit for testing game over
   private readonly INITIAL_DROPPER_RANGE_MAX_INDEX = 3; // NEW: Only drop first 4 pies initially
   private readonly SCORE_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
     fontFamily: 'sans-serif',
@@ -93,6 +93,17 @@ class Main extends Phaser.Scene {
       letterSpacing: -2 // ADDED: Tighten letter spacing
   };
   
+  private readonly MENU_ITEM_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
+      fontFamily: 'sans-serif', // Use same as score
+      fontSize: '40px', // Slightly smaller than score
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 4,
+      // ADDED background/padding to simulate border
+      backgroundColor: '#444444', // Dark grey background
+      padding: { x: 15, y: 5 } // Add horizontal and vertical padding
+  };
+  
   // --- State & Game Objects ---
   score = 0;
   dropper!: Phaser.GameObjects.Image;
@@ -128,6 +139,12 @@ class Main extends Phaser.Scene {
   titlePlayButton!: Phaser.GameObjects.Image;
   titleMenuButton!: Phaser.GameObjects.Image;
   topLogo!: Phaser.GameObjects.Image; // ADDED property for in-game logo
+  isInMenu = false;
+  menuBackground!: Phaser.GameObjects.Rectangle;
+  muteToggleRect!: Phaser.GameObjects.Rectangle;
+  muteCheckmark!: Phaser.GameObjects.Graphics;
+  restartButton!: Phaser.GameObjects.Text;
+  leaderboardButton!: Phaser.GameObjects.Text;
 
   // --- Lifecycle Methods ---
   preload() {
@@ -211,7 +228,9 @@ class Main extends Phaser.Scene {
       .setScale(0)
       .setInteractive({ useHandCursor: true })
       .setDepth(100);
-    this.titleMenuButton.on('pointerdown', () => { this._startGame(); });
+    this.titleMenuButton.on('pointerdown', () => { 
+        this._showMenuScreen(); // NEW: Show menu
+    });
 
     // Animate Logo
     this.tweens.add({
@@ -574,7 +593,7 @@ class Main extends Phaser.Scene {
                         onAllAnimationsComplete(); // Check if all done
                     }
                 });
-                // Ensure tween stops if object destroyed prematurely
+                // Ensure inhale tween stops if object destroyed prematurely
                  matterPieObject.once('destroy', () => { if (explodeTween && explodeTween.isPlaying()) { explodeTween.stop(); } });
             }
         });
@@ -1069,7 +1088,7 @@ class Main extends Phaser.Scene {
   // ADDED: Method to initialize and start the main game
   private _startGame() {
     // Prevent starting multiple times
-    if (this.isGameActive) return; 
+    if (this.isGameActive || this.isInMenu) return; // ADDED isInMenu check
 
     // 1. Enable Physics and let Title Elements Fall
     const elementsToDrop = [this.titleLogo, this.titlePlayButton, this.titleMenuButton];
@@ -1092,57 +1111,217 @@ class Main extends Phaser.Scene {
         }
     });
 
-    // 3. Setup Main Game (with a slight delay)
+    // 2. Setup Main Game (with a slight delay)
     this.time.delayedCall(200, () => { 
-        // Matter world setup
-        this.matter.world.setBounds(this.WALL_OFFSET, this.CEILING_Y, +this.game.config.width - (this.WALL_OFFSET * 2), this.FLOOR_Y - this.CEILING_Y); 
-        this.matter.world.setGravity(0, 4); // Use game gravity
-
-        // Create Pies Group
-        this.group = this.add.group();
-
-        // --- Create Ceiling Sensor ---
-        const sensorY = this.CEILING_Y - 1;
-        this.ceilingSensorBody = this.matter.add.rectangle(
-          +this.game.config.width / 2,
-          sensorY,
-          +this.game.config.width - (this.WALL_OFFSET * 2),
-          5, 
-          { isStatic: true, isSensor: true, label: 'ceilingSensor' }
-        );
-
-        // --- Create UI Elements ---
-        this._createUIElements();
-
-        // --- ADD Top Logo --- 
-        const topLogoX = +this.game.config.width / 2;
-        const topLogoY = 0; // REVERTED: Start at the very top
-        // Assign created logo to class property
-        this.topLogo = this.add.image(topLogoX, topLogoY, 'toplogo')
-            .setOrigin(0.5, 0) // REVERTED: Anchor top-center
-            .setScale(0.60) 
-            .setDepth(5); 
-        // --- End Add Top Logo ---
-
-        // --- Create Object Pools ---
-        this._createGameObjectPools();
-
-        // --- Collision Handling ---
-        this.matter.world.on('collisionstart', this._handleCollisionStart, this);
-        this.matter.world.on('collisionactive', this._handleCollisionActive, this);
-        this.matter.world.on('collisionend', this._handleCollisionEnd, this);
-
-        // --- Initial Game State ---
-        this._initializeDropperState();
-        this._initializeGaugeState();
-
-        // --- Resize Handling ---
-        this._handleResize(); // Call once to position UI correctly
-
-        // --- Set Game Active --- 
-        this.isGameActive = true; // Allow update loop to run game logic
-        this.isGameOver = false; // Ensure game over state is reset
+        // Now just calls the setup helper
+        this._setupGameplay();
     }); // End of delayed call
+  }
+
+  // ADDED: Helper method containing the core game setup logic
+  private _setupGameplay() {
+     // Matter world setup (Needs to exist before adding game objects)
+      this.matter.world.setBounds(this.WALL_OFFSET, this.CEILING_Y, +this.game.config.width - (this.WALL_OFFSET * 2), this.FLOOR_Y - this.CEILING_Y); 
+      this.matter.world.setGravity(0, 4); // Use game gravity
+
+      // Create Pies Group
+      this.group = this.add.group();
+
+      // --- Create Ceiling Sensor ---
+      const sensorY = this.CEILING_Y - 1;
+      this.ceilingSensorBody = this.matter.add.rectangle(
+        +this.game.config.width / 2,
+        sensorY,
+        +this.game.config.width - (this.WALL_OFFSET * 2), // Use new width & offset
+        5, 
+        { isStatic: true, isSensor: true, label: 'ceilingSensor' }
+      );
+
+      // --- Create UI Elements ---
+      this._createUIElements();
+
+      // --- ADD Top Logo --- 
+      const topLogoX = +this.game.config.width / 2;
+      const topLogoY = 0; // REVERTED: Start at the very top
+      this.topLogo = this.add.image(topLogoX, topLogoY, 'toplogo')
+          .setOrigin(0.5, 0) // REVERTED: Anchor top-center
+          .setScale(0.60) 
+          .setDepth(5); 
+
+      // --- Create Object Pools ---
+      this._createGameObjectPools();
+
+      // --- Collision Handling ---
+      this.matter.world.on('collisionstart', this._handleCollisionStart, this);
+      this.matter.world.on('collisionactive', this._handleCollisionActive, this);
+      this.matter.world.on('collisionend', this._handleCollisionEnd, this);
+
+      // --- Initial Game State ---
+      this._initializeDropperState();
+      this._initializeGaugeState();
+
+      // --- Resize Handling ---
+      this._handleResize(); // Call once to position UI correctly
+
+      // --- Set Game Active --- 
+      this.isGameActive = true; // Allow update loop to run game logic
+      this.isGameOver = false; // Ensure game over state is reset
+  }
+
+  // ADDED: Method to animate exit from menu and start game
+  private _exitMenuAndStartGame() {
+      // Prevent running if not in menu or game already active
+      if (!this.isInMenu || this.isGameActive) return;
+      this.isInMenu = false; // Clear menu flag
+
+      const camera = this.cameras.main;
+      const screenBottom = camera.displayHeight + 100; // Target Y below screen
+      const animationDuration = 500;
+
+      // Animate menu elements off screen
+      this.tweens.add({
+          targets: [this.menuBackground, this.titleMenuButton, this.titlePlayButton],
+          y: screenBottom,
+          duration: animationDuration,
+          ease: 'Cubic.In',
+          onComplete: () => {
+              // Destroy menu elements
+              this.menuBackground?.destroy();
+              this.titleMenuButton?.destroy();
+              this.titlePlayButton?.destroy();
+              // Destroy menu options
+              this.muteToggleRect?.destroy();
+              this.muteCheckmark?.destroy();
+              this.restartButton?.destroy();
+              this.leaderboardButton?.destroy();
+              // Setup the game
+              this._setupGameplay();
+          }
+      });
+  }
+
+  // ADDED: Method to animate transition to menu screen
+  private _showMenuScreen() {
+    // Prevent running if already in menu or game started
+    if (this.isGameActive || this.isInMenu) return;
+    this.isInMenu = true; // Set menu flag
+
+    const screenTop = -this.titleLogo.displayHeight; // Target Y above screen
+    const camera = this.cameras.main; // Get camera reference
+    const menuButtonTargetY = camera.worldView.y + (this.titleMenuButton.displayHeight * this.titleMenuButton.scaleY / 2) + 60; // Increased padding to 60px from top
+    const animationDuration = 500; // ms
+
+    // 1. Animate Logo and Play Button Upwards
+    this.tweens.add({
+        targets: [this.titleLogo, this.titlePlayButton],
+        y: screenTop,
+        duration: animationDuration,
+        ease: 'Cubic.In', // Ease in for upward movement
+        onComplete: () => {
+            // After moving off-screen, reposition Play button below screen
+            const playButtonFinalY = this.menuBackground.y + (this.menuBackground.displayHeight / 2) - (this.titlePlayButton.displayHeight * this.titlePlayButton.scaleY / 2)+10; // Position slightly above bottom edge of menu BG
+            this.titlePlayButton.y = camera.displayHeight + this.titlePlayButton.displayHeight; // Move below screen
+            
+            // Animate Play button back up
+            this.tweens.add({
+                targets: this.titlePlayButton,
+                y: playButtonFinalY,
+                alpha: 1, // Ensure it's visible
+                duration: animationDuration * 0.8, 
+                ease: 'Cubic.Out',
+                onComplete: () => {
+                    // Remove previous listener (if any)
+                    this.titlePlayButton.off('pointerdown'); 
+                    // Add new listener to exit menu
+                    this.titlePlayButton.on('pointerdown', () => {
+                        this._exitMenuAndStartGame();
+                    });
+                }
+            });
+        }
+    });
+
+    // 2. Animate Menu Button to Top Position
+    this.tweens.add({
+        targets: this.titleMenuButton,
+        y: menuButtonTargetY,
+        duration: animationDuration,
+        ease: 'Cubic.InOut' // Smooth transition
+    });
+
+    // 3. Create and Fade In Dark Background
+    // Calculate position and size based on camera view for responsiveness
+    const bgWidth = camera.displayWidth * 0.8; // 80% of screen width
+    const bgHeight = camera.displayHeight * 0.75; // 60% of screen height
+    const bgX = camera.centerX; // Center X
+    const bgY = menuButtonTargetY + (bgHeight/2) +10; // Position slightly below center Y
+
+    this.menuBackground = this.add.rectangle(bgX, bgY, bgWidth, bgHeight, 0x000000, 0.7)
+        .setOrigin(0.5)
+        .setAlpha(0) // Start transparent
+        .setDepth(90); // Below menu button but above title elements
+
+    this.tweens.add({
+        targets: this.menuBackground,
+        alpha: 0.7, // Fade in to target alpha
+        duration: animationDuration,
+        delay: animationDuration * 0.5, 
+        ease: 'Linear',
+        onComplete: () => {
+            console.log("Menu screen ready");
+            
+            // --- Add Menu Options --- 
+            const menuCenterX = this.menuBackground.x;
+            const menuTopY = this.menuBackground.y - (this.menuBackground.displayHeight / 2);
+            const itemPadding = 100; // INCREASED vertical padding further
+            const initialTopOffset = 90; // Start first item lower
+            const toggleSize = 30; 
+            const itemDepth = 91; // Depth for items above background
+
+            // Mute Option
+            const muteY = menuTopY + initialTopOffset; // New Y based on offset
+            this.add.text(menuCenterX - (toggleSize / 2) - 10, muteY, "Mute", this.MENU_ITEM_STYLE)
+                .setOrigin(1, 0.5) // Align text right edge to left of toggle center
+                .setDepth(itemDepth); // Set depth
+            this.muteToggleRect = this.add.rectangle(menuCenterX, muteY, toggleSize, toggleSize, 0xffffff)
+                .setOrigin(0.5) // Center the toggle box
+                .setStrokeStyle(2, 0xaaaaaa)
+                .setInteractive({ useHandCursor: true })
+                .setDepth(itemDepth); // Set depth
+            // Add checkmark graphics inside toggle
+            this.muteCheckmark = this.add.graphics({ x: menuCenterX, y: muteY })
+                .setDepth(itemDepth + 1); // Ensure checkmark is above toggle box
+            this.muteCheckmark.lineStyle(4, 0x00ff00).strokePoints([{x: -8, y: 0}, {x: 0, y: 8}, {x: 8, y: -8}]);
+            this.muteCheckmark.setVisible(!this.sound.mute);
+            // Mute Toggle Listener
+            this.muteToggleRect.on('pointerdown', () => {
+                this.sound.mute = !this.sound.mute;
+                this.muteCheckmark.setVisible(!this.sound.mute);
+            });
+
+            // Restart Option
+            const restartY = muteY + itemPadding; // New Y calc
+            this.restartButton = this.add.text(menuCenterX, restartY, "Restart Game", this.MENU_ITEM_STYLE)
+                .setOrigin(0.5)
+                .setInteractive({ useHandCursor: true })
+                .setDepth(itemDepth); // Set depth
+            this.restartButton.on('pointerdown', () => {
+                this.scene.restart(); // Simple restart for now
+            });
+
+            // Leaderboard Option (Placeholder)
+            const leaderboardY = restartY + itemPadding; // New Y calc
+            this.leaderboardButton = this.add.text(menuCenterX, leaderboardY, "Leaderboard", this.MENU_ITEM_STYLE)
+                .setOrigin(0.5)
+                .setInteractive({ useHandCursor: true })
+                .setDepth(itemDepth); // Set depth
+             this.leaderboardButton.on('pointerdown', () => {
+                 console.log("Leaderboard clicked (not implemented)");
+                 // TODO: Implement leaderboard scene/modal
+             });
+            // --- End Menu Options ---
+        }
+    });
   }
 
 } // End of Main Scene
