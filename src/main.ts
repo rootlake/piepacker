@@ -36,8 +36,8 @@ class Main extends Phaser.Scene {
   private readonly CEILING_Y = 220; // Lowered further to accommodate dropper below scaled top logo
   private readonly FLOOR_Y = 995; // REVERTED floor back low
   private readonly WALL_OFFSET = 15; // REDUCED offset (wider playfield)
-  private readonly MAX_CEILING_TOUCHES = 6; // NEW: Lower limit for testing game over
-  private readonly INITIAL_DROPPER_RANGE_MAX_INDEX = 3; // NEW: Only drop first 4 pies initially
+  private readonly MAX_CEILING_TOUCHES = 6; // Keep lower limit for now
+  // private readonly INITIAL_DROPPER_RANGE_MAX_INDEX = 3; // OLD: REMOVED - Not used
   private readonly SCORE_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
     fontFamily: 'sans-serif',
     fontSize: '56px',
@@ -145,6 +145,13 @@ class Main extends Phaser.Scene {
   muteCheckmark!: Phaser.GameObjects.Graphics;
   restartButton!: Phaser.GameObjects.Text;
   leaderboardButton!: Phaser.GameObjects.Text;
+
+  // --- New State for Staged Pie Introduction --- 
+  private maxDroppablePieIndex = 3; // Indices 0-3 can drop initially
+  private highestPieCreatedIndex = 3; // Tracks highest pie created via merge
+  private dropsSinceMediumPieUnlock = 0; // Counter for unlocking next tier
+  private readonly DROPS_TO_UNLOCK_NEXT_PIE = 10; // Drops required after creating a new medium pie
+  private nextSequentialDropIndex = 0; // Used for sequential dropping test
 
   // --- Lifecycle Methods ---
   preload() {
@@ -262,6 +269,11 @@ class Main extends Phaser.Scene {
     }, this);
     this._handleResize(); // Call once for initial screen size
 
+    // --- Initialize New State --- (Added in create)
+    this.maxDroppablePieIndex = 3; 
+    this.highestPieCreatedIndex = 3;
+    this.dropsSinceMediumPieUnlock = 0;
+    this.nextSequentialDropIndex = 0;
   }
 
   update(/* time: number, delta: number */) {
@@ -349,7 +361,6 @@ class Main extends Phaser.Scene {
     const mergeX = (pieA.x + pieB.x) / 2;
     const mergeY = (pieA.y + pieB.y) / 2;
     const shrinkDuration = 150; // Consider constant
-    const popDuration = 100; // Consider constant
     const flashBaseDuration = 200; // Consider constant
     const flashBaseScale = 5; // Consider constant
     const largeMergeThreshold = 5; // Consider constant
@@ -445,25 +456,26 @@ class Main extends Phaser.Scene {
         // --- End Robust Cleanup ---
 
         // Create and animate new pie
-        const newGameObject = this.addPie(mergeX, mergeY, nextPie);
-        const finalWidth = nextPie.radius * 2;
-        const finalHeight = nextPie.radius * 2;
-        newGameObject.setDisplaySize(finalWidth * 0.1, finalHeight * 0.1);
-        this.group.add(newGameObject);
+        const newPieObject = this.addPie(mergeX, mergeY, nextPie);
+        this.group.add(newPieObject);
+        newPieObject.setData('isNew', true);
 
-        // Pop animation for new pie
-        this.tweens.add({
-          targets: newGameObject,
-          displayWidth: finalWidth,
-          displayHeight: finalHeight,
-          duration: popDuration,
-          ease: 'Back.Out'
-        });
+        // --- Update Highest Pie Created & Unlock Logic ---
+        const nextPieIndex = pies.findIndex(p => p.name === nextPie.name);
+        if (nextPieIndex > this.highestPieCreatedIndex) {
+            this.highestPieCreatedIndex = nextPieIndex;
+            console.log(`New highestPieCreatedIndex: ${this.highestPieCreatedIndex}`);
+            // REMOVED: Resetting dropsSinceMediumPieUnlock here caused issues with rapid merges.
+            // The counter will only reset after a successful unlock in _handlePointerUp.
+            // if (nextPieIndex >= 4 && nextPieIndex <= 12 && nextPieIndex > this.maxDroppablePieIndex) {
+            //     this.dropsSinceMediumPieUnlock = 0;
+            //     console.log(`Reset dropsSinceMediumPieUnlock for ${nextPie.name}`);
+            // }
+        }
+        // --- End Update --- 
 
-        // Update score and announce
-        this.score += (pieIndex + 1) * 10;
-        this.drawScore();
-        this._checkAndAnnounceNewPie(nextPie, pieIndex);
+        // Check if the NEWLY MERGED pie needs announcement
+        this._checkAndAnnounceNewPie(nextPie, nextPieIndex);
       }
     };
 
@@ -800,16 +812,32 @@ class Main extends Phaser.Scene {
             // Select next pie and update dropper
             this._selectAndUpdateNextDropperPie();
             this.isDropping = false;
+
+            // --- Increment drop counter & check for unlocking --- 
+            this.dropsSinceMediumPieUnlock++;
+            // Check if enough drops have passed AND if there's a higher pie created waiting to be unlocked
+            if (this.dropsSinceMediumPieUnlock >= this.DROPS_TO_UNLOCK_NEXT_PIE && this.highestPieCreatedIndex > this.maxDroppablePieIndex) {
+               // Unlock all pies up to the highest created (capped at 12)
+               this.maxDroppablePieIndex = Math.min(this.highestPieCreatedIndex, 12); 
+               console.log(`Unlocked pies up to index: ${this.maxDroppablePieIndex}`);
+               // Reset the counter AFTER unlocking
+               this.dropsSinceMediumPieUnlock = 0;
+            }
         }
       });
   }
 
   private _selectAndUpdateNextDropperPie() {
-      // Only drop pies up to the max index allowed initially
-      const availableToDrop = this.droppablePieIndices.filter(index => index <= this.INITIAL_DROPPER_RANGE_MAX_INDEX);
-            const nextPieIndex = Phaser.Math.RND.pick(availableToDrop);
-            const nextPie = pies[nextPieIndex];
-            this.updatePieDropper(nextPie); 
+      // --- NEW SEQUENTIAL LOGIC --- 
+      const nextPieIndex = this.nextSequentialDropIndex;
+      const nextPie = pies[nextPieIndex];
+      this.updatePieDropper(nextPie); 
+
+      // Increment and loop sequential index
+      this.nextSequentialDropIndex++;
+      if (this.nextSequentialDropIndex > this.maxDroppablePieIndex) {
+          this.nextSequentialDropIndex = 0; // Loop back
+      }
   }
 
   private _handleCollisionActive(event: Phaser.Physics.Matter.Events.CollisionActiveEvent) {
@@ -858,11 +886,15 @@ class Main extends Phaser.Scene {
                  )
               {
                   const pieIndex = pies.findIndex((pie) => pie.name === gameObjectA.name);
-            gameObjectA.setData('isMerging', true);
-            gameObjectB.setData('isMerging', true);
+                  gameObjectA.setData('isMerging', true);
+                  gameObjectB.setData('isMerging', true);
 
-                  if (pieIndex < pies.length - 1) { // Not largest pie
-              const nextPie = pies[pieIndex + 1];
+                  // --- MERGE LOGIC MODIFIED --- 
+                  // Check if pieIndex is less than the absolute last mergeable index (17 for Pizza)
+                  // pies.length is 19, so pies.length - 2 is the index of the last merge *result* (Pizza = 18)
+                  // Therefore, the last *source* pie index that can merge is 17 (Raspberry Pie Big)
+                  if (pieIndex <= 17) { // Check if the CURRENT pie index is mergeable
+                      const nextPie = pies[pieIndex + 1];
                       const soundKey = 'pop'; // Restore pop sound
                       // Calculate detune based on pie size (index 0 = lowest pitch, index max = highest)
                       const maxDetune = 600; // Max detune in cents (+/- 6 semitones)
@@ -908,9 +940,11 @@ class Main extends Phaser.Scene {
   }
 
   private _initializeDropperState() {
-    // Start with a random pie from the initial allowed range
-    const initialDroppableRange = this.droppablePieIndices.filter(index => index <= this.INITIAL_DROPPER_RANGE_MAX_INDEX);
-    this.updatePieDropper(pies[Phaser.Math.RND.pick(initialDroppableRange)]);
+    // --- NEW INITIALIZATION using sequential drop --- 
+    this.nextSequentialDropIndex = 0; // Start sequence at 0
+    this.updatePieDropper(pies[this.nextSequentialDropIndex]);
+    // Increment for the *next* drop after this initial one
+    this.nextSequentialDropIndex++; 
 
     // Dropper glow effect
     const glow = this.dropper.postFX.addGlow(0x99ddff);
