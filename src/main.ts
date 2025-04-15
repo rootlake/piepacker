@@ -461,6 +461,10 @@ class Main extends Phaser.Scene {
         this.group.add(newPieObject);
         newPieObject.setData('isNew', true);
 
+        // --- Update Score ---
+        this.score += (pieIndex + 1) * 10; // Award points based on merged pie index
+        this.drawScore();
+
         // --- Update Highest Pie Created & Unlock Logic ---
         const nextPieIndex = pies.findIndex(p => p.name === nextPie.name);
         if (nextPieIndex > this.highestPieCreatedIndex) {
