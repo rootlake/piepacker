@@ -151,6 +151,7 @@ class Main extends Phaser.Scene {
   private highestPieCreatedIndex = 3; // Tracks highest pie created via merge
   private dropsSinceMediumPieUnlock = 0; // Counter for unlocking next tier
   private readonly DROPS_TO_UNLOCK_NEXT_PIE = 10; // Drops required after creating a new medium pie
+  private readonly MAX_DROPPABLE_PIE_INDEX = 9; // Oreo Pie - largest that can be dropped
   private nextSequentialDropIndex = 0; // Used for sequential dropping test
 
   // --- Lifecycle Methods ---
@@ -817,11 +818,11 @@ class Main extends Phaser.Scene {
             this.dropsSinceMediumPieUnlock++;
             // Check if enough drops have passed AND if there's a higher pie created waiting to be unlocked
             if (this.dropsSinceMediumPieUnlock >= this.DROPS_TO_UNLOCK_NEXT_PIE && this.highestPieCreatedIndex > this.maxDroppablePieIndex) {
-               // Unlock all pies up to the highest created (capped at 12)
-               this.maxDroppablePieIndex = Math.min(this.highestPieCreatedIndex, 12); 
-               console.log(`Unlocked pies up to index: ${this.maxDroppablePieIndex}`);
-               // Reset the counter AFTER unlocking
-               this.dropsSinceMediumPieUnlock = 0;
+                // Unlock all pies up to the highest created (capped at 9 - Oreo Pie)
+                this.maxDroppablePieIndex = Math.min(this.highestPieCreatedIndex, this.MAX_DROPPABLE_PIE_INDEX);
+                console.log(`Unlocked pies up to index: ${this.maxDroppablePieIndex}`);
+                // Reset the counter AFTER unlocking
+                this.dropsSinceMediumPieUnlock = 0;
             }
         }
       });
