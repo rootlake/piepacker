@@ -36,7 +36,7 @@ class Main extends Phaser.Scene {
   private readonly CEILING_Y = 220; // Lowered further to accommodate dropper below scaled top logo
   private readonly FLOOR_Y = 995; // REVERTED floor back low
   private readonly WALL_OFFSET = 15; // REDUCED offset (wider playfield)
-  private readonly MAX_CEILING_TOUCHES = 6; // Keep lower limit for now
+  private readonly MAX_CEILING_TOUCHES = 8; // Increased limit
   // private readonly INITIAL_DROPPER_RANGE_MAX_INDEX = 3; // OLD: REMOVED - Not used
   private readonly SCORE_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
     fontFamily: 'sans-serif',
