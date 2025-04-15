@@ -152,7 +152,7 @@ class Main extends Phaser.Scene {
   private dropsSinceMediumPieUnlock = 0; // Counter for unlocking next tier
   private readonly DROPS_TO_UNLOCK_NEXT_PIE = 10; // Drops required after creating a new medium pie
   private readonly MAX_DROPPABLE_PIE_INDEX = 9; // Oreo Pie - largest that can be dropped
-  private nextSequentialDropIndex = 0; // Used for sequential dropping test
+  // private nextSequentialDropIndex = 0; // REMOVED - No longer needed with random selection
 
   // --- Lifecycle Methods ---
   preload() {
@@ -271,10 +271,10 @@ class Main extends Phaser.Scene {
     this._handleResize(); // Call once for initial screen size
 
     // --- Initialize New State --- (Added in create)
-    this.maxDroppablePieIndex = 3; 
+    this.maxDroppablePieIndex = 3;
     this.highestPieCreatedIndex = 3;
     this.dropsSinceMediumPieUnlock = 0;
-    this.nextSequentialDropIndex = 0;
+    // this.nextSequentialDropIndex = 0; // REMOVED - No longer needed with random selection
   }
 
   update(/* time: number, delta: number */) {
@@ -829,16 +829,38 @@ class Main extends Phaser.Scene {
   }
 
   private _selectAndUpdateNextDropperPie() {
-      // --- NEW SEQUENTIAL LOGIC --- 
-      const nextPieIndex = this.nextSequentialDropIndex;
+      // --- NEW WEIGHTED RANDOM LOGIC ---
+      const SMALL_PIE_RANGE = { min: 0, max: 4 }; // Raspberry Mini to Cherry Pie
+      const MEDIUM_PIE_RANGE = { min: 5, max: 9 }; // Chocolate Cream to Oreo Pie
+      
+      // Create weighted array of droppable indices
+      const droppableIndices: number[] = [];
+      
+      // Get the unlocked indices in each range (capped by maxDroppablePieIndex)
+      const unlockedSmallPies = Array.from(
+          { length: Math.min(SMALL_PIE_RANGE.max, this.maxDroppablePieIndex) - SMALL_PIE_RANGE.min + 1 }, 
+          (_, i) => i + SMALL_PIE_RANGE.min
+      );
+      
+      const unlockedMediumPies = this.maxDroppablePieIndex >= MEDIUM_PIE_RANGE.min 
+          ? Array.from(
+              { length: Math.min(MEDIUM_PIE_RANGE.max, this.maxDroppablePieIndex) - MEDIUM_PIE_RANGE.min + 1 }, 
+              (_, i) => i + MEDIUM_PIE_RANGE.min
+            ) 
+          : [];
+          
+      // Add small pies TWICE for double probability
+      droppableIndices.push(...unlockedSmallPies, ...unlockedSmallPies);
+      
+      // Add medium pies ONCE (half as common)
+      droppableIndices.push(...unlockedMediumPies);
+      
+      // Pick a random index from the weighted array
+      const nextPieIndex = Phaser.Math.RND.pick(droppableIndices);
       const nextPie = pies[nextPieIndex];
-      this.updatePieDropper(nextPie); 
-
-      // Increment and loop sequential index
-      this.nextSequentialDropIndex++;
-      if (this.nextSequentialDropIndex > this.maxDroppablePieIndex) {
-          this.nextSequentialDropIndex = 0; // Loop back
-      }
+      
+      console.log(`Selected pie: ${nextPie.name} (index ${nextPieIndex})`);
+      this.updatePieDropper(nextPie);
   }
 
   private _handleCollisionActive(event: Phaser.Physics.Matter.Events.CollisionActiveEvent) {
@@ -941,11 +963,15 @@ class Main extends Phaser.Scene {
   }
 
   private _initializeDropperState() {
-    // --- NEW INITIALIZATION using sequential drop --- 
-    this.nextSequentialDropIndex = 0; // Start sequence at 0
-    this.updatePieDropper(pies[this.nextSequentialDropIndex]);
-    // Increment for the *next* drop after this initial one
-    this.nextSequentialDropIndex++; 
+    // // --- OLD INITIALIZATION using sequential drop --- 
+    // this.nextSequentialDropIndex = 0; // Start sequence at 0
+    // this.updatePieDropper(pies[this.nextSequentialDropIndex]);
+    // // Increment for the *next* drop after this initial one
+    // this.nextSequentialDropIndex++; 
+
+    // --- NEW INITIALIZATION using random selection ---
+    // Select first pie using the same weighted random logic
+    this._selectAndUpdateNextDropperPie();
 
     // Dropper glow effect
     const glow = this.dropper.postFX.addGlow(0x99ddff);
@@ -1088,12 +1114,11 @@ class Main extends Phaser.Scene {
           this.announceNewPie(pie); 
       }
 
-      // Always add the index of the *created* pie to droppable (if not already there)
-      // This allows pies > 3 to become droppable after being merged
-      if (!this.droppablePieIndices.includes(pieIndex)) {
+      // Only add to droppable indices if it's within the maximum allowed size
+      // and is not already in the list of droppable indices
+      if (pieIndex <= this.MAX_DROPPABLE_PIE_INDEX && !this.droppablePieIndices.includes(pieIndex)) {
           this.droppablePieIndices.push(pieIndex);
-          // Optional: Sort if you want droppable list ordered (might not be necessary)
-          // this.droppablePieIndices.sort((a, b) => a - b);
+          console.log(`Added ${pie.name} (index ${pieIndex}) to droppable pies`);
       }
   }
 
