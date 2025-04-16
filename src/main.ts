@@ -80,7 +80,7 @@ class Main extends Phaser.Scene {
     0xF5EB02, 0xF5C913, 0xF6951E, 0xF15B22, 0xE92A28
   ];
   private readonly STABLE_TOUCH_DURATION = 500; // ms a pie must touch before counting
-  private readonly STRAIN_SOUND_INTERVAL = 5000; // ms between strain sounds
+  private readonly STRAIN_SOUND_INTERVAL = 1500; // REDUCED interval for sigh sound (1.5s)
   
   // Announcement style constant (can be moved near others if preferred)
   private readonly NEW_ANNOUNCEMENT_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
@@ -134,7 +134,7 @@ class Main extends Phaser.Scene {
   private _lastStrainSoundPlayTime: { [key: string]: number } = {}; // Track last play time for each squeak
   private _hasReachedSighThreshold: boolean = false; // Added for sigh sound logic
   private _timeAtZeroStart: number | null = null; // Tracks when count first hit 1 or 0
-  private _previousCeilingTouchCount = 0; // ADDED: Track count from previous frame for sound triggers
+  private _previousCeilingTouchCount = 0; // ADDED BACK: Track count from previous frame for sound triggers
   titleLogo!: Phaser.GameObjects.Image;
   titlePlayButton!: Phaser.GameObjects.Image;
   titleMenuButton!: Phaser.GameObjects.Image;
@@ -154,6 +154,13 @@ class Main extends Phaser.Scene {
   private readonly MAX_DROPPABLE_PIE_INDEX = 9; // Oreo Pie - largest that can be dropped
   // private nextSequentialDropIndex = 0; // REMOVED - No longer needed with random selection
 
+  // --- New State for Creak Sound ---
+  private _countAtCreakStabilityStart = 0;
+  private _stabilityStartTime: number | null = null; // REPLACED frame counter
+  private readonly CREAK_STABILITY_DURATION_MS = 1000; // Must be stable for 1s
+  private readonly CREAK_SOUND_INTERVAL_MS = 1000; // Min 1s between plays (Acts as debounce here)
+  private _creakPlayedForCount = -1; // Track level sound was last played for
+
   // --- Lifecycle Methods ---
   preload() {
     // Load the combined pie texture atlas with updated path
@@ -171,24 +178,10 @@ class Main extends Phaser.Scene {
         'assets/sounds/pop.aac'
     ]);
 
-    // Load squeak/strain sounds with fallbacks using CORRECT short names
-    this.load.audio('squeak1', [
-        'assets/sounds/squeak1.ogg',
-        'assets/sounds/squeak1.aac'
-    ]);
-    this.load.audio('squeak2', [
-        'assets/sounds/squeak2.ogg',
-        'assets/sounds/squeak2.aac'
-    ]);
-    this.load.audio('squeak3', [
-        'assets/sounds/squeak3.ogg',
-        'assets/sounds/squeak3.aac'
-    ]);
-
-    // Load sigh sound with fallbacks using CORRECT short names
-    this.load.audio('sigh', [
-        'assets/sounds/sigh.ogg',
-        'assets/sounds/sigh.aac'
+    // Load NEW creak sound
+    this.load.audio('creak', [
+        'assets/sounds/creak.ogg',
+        'assets/sounds/creak.aac'
     ]);
    
     // Load UI graphics
@@ -199,6 +192,12 @@ class Main extends Phaser.Scene {
 
     // Load the pie texture atlas
     // ... existing code ...
+
+    // --- Restored Sigh Sound --- 
+    this.load.audio('sigh', [
+        'assets/sounds/sigh.ogg',
+        'assets/sounds/sigh.aac'
+    ]);
   }
 
   create() {
@@ -262,8 +261,8 @@ class Main extends Phaser.Scene {
     // --- Main Game Setup (Now happens in _startGame) ---
 
     // --- Initial Listeners (Needed for Title Screen & Game) ---
-    // Add pointerup listener here, it will be used by _handlePointerUp later
-    this.input.on('pointerup', this._handlePointerUp, this); 
+    // REMOVED: Moved pointerup listener registration to _setupGameplay
+    // this.input.on('pointerup', this._handlePointerUp, this); 
     // Add resize listener here
     this.scale.on('resize', () => { 
         this._handleResize(); // Call original resize handler
@@ -967,12 +966,6 @@ class Main extends Phaser.Scene {
   }
 
   private _initializeDropperState() {
-    // // --- OLD INITIALIZATION using sequential drop --- 
-    // this.nextSequentialDropIndex = 0; // Start sequence at 0
-    // this.updatePieDropper(pies[this.nextSequentialDropIndex]);
-    // // Increment for the *next* drop after this initial one
-    // this.nextSequentialDropIndex++; 
-
     // --- NEW INITIALIZATION using random selection ---
     // Select first pie using the same weighted random logic
     this._selectAndUpdateNextDropperPie();
@@ -990,6 +983,14 @@ class Main extends Phaser.Scene {
     this.drawScore();
     // Reset displayed count
     this._currentDisplayedCeilingCount = 0;
+    // Reset creak sound stability state
+    this._countAtCreakStabilityStart = 0;
+    this._stabilityStartTime = null;
+    this._creakPlayedForCount = -1;
+    // Reset sigh sound state
+    this._hasReachedSighThreshold = false;
+    this._timeAtZeroStart = null;
+    this._previousCeilingTouchCount = 0;
     // Initialize ceiling bar (inactive/green)
     this.ceilingBarGraphics.clear();
     this.ceilingBarGraphics.fillStyle(this.COLOR_GREEN, 1);
@@ -1039,65 +1040,77 @@ class Main extends Phaser.Scene {
       this.ceilingCounterBg.fillCircle(0, 0, this.COUNTER_CIRCLE_RADIUS);
       // --- End UI Color Update ---
 
-      // --- Sound Playback Logic --- 
-      const currentTouchCount = this._currentDisplayedCeilingCount;
-      const previousTouchCount = this._previousCeilingTouchCount;
-
-      // --- Squeak Sound Logic (Threshold Crossing & Rate Limiting) --- 
-      // Check for squeak3 threshold (8+)
-      if (currentTouchCount >= 8 && previousTouchCount < 8) {
-          const lastPlayTime = this._lastStrainSoundPlayTime['squeak3'] || 0;
-          if (currentTime - lastPlayTime > this.STRAIN_SOUND_INTERVAL) {
-              this.sound.play('squeak3', { volume: 0.8 });
-              this._lastStrainSoundPlayTime['squeak3'] = currentTime;
-          }
-      }
-      // Check for squeak2 threshold (5-7) only if squeak3 didn't trigger
-      else if (currentTouchCount >= 5 && previousTouchCount < 5) {
-          const lastPlayTime = this._lastStrainSoundPlayTime['squeak2'] || 0;
-          if (currentTime - lastPlayTime > this.STRAIN_SOUND_INTERVAL) {
-              this.sound.play('squeak2', { volume: 0.6 });
-              this._lastStrainSoundPlayTime['squeak2'] = currentTime;
-          }
-      }
-      // Check for squeak1 threshold (2-4) only if squeak2/3 didn't trigger
-      else if (currentTouchCount >= 2 && previousTouchCount < 2) {
-          const lastPlayTime = this._lastStrainSoundPlayTime['squeak1'] || 0;
-          if (currentTime - lastPlayTime > this.STRAIN_SOUND_INTERVAL) {
-              this.sound.play('squeak1', { volume: 0.4 });
-              this._lastStrainSoundPlayTime['squeak1'] = currentTime;
-          }
-      }
+      // --- Creak Sound Logic (Time-based Stability & Play Once on Increase) ---
+      const currentStableCount = this._currentDisplayedCeilingCount; // Use local var
       
-      // --- Sigh Sound Logic (Updated) --- 
-      // Set flag if threshold is reached
-      if (currentTouchCount >= 2) { 
-          this._hasReachedSighThreshold = true;
-          this._timeAtZeroStart = null; // Reset timer if count goes up
+      // Check if count changed
+      if (currentStableCount !== this._countAtCreakStabilityStart) {
+          // Count changed, reset stability tracking
+          this._countAtCreakStabilityStart = currentStableCount;
+          this._stabilityStartTime = this.time.now; // Start timer for new stable count
+          // Don't reset _creakPlayedForCount here
       }
 
-      // Check if count is low (1 or 0) and threshold was met
-      if (currentTouchCount <= 1 && this._hasReachedSighThreshold) { // CHANGED condition to <= 1
-          // Start timer if it hasn't started
+      // Check if stability duration met for the *current* stable count
+      if (this._stabilityStartTime !== null) {
+          const stableDurationMs = currentTime - this._stabilityStartTime;
+          
+          // Check conditions to play sound:
+          if (stableDurationMs >= this.CREAK_STABILITY_DURATION_MS &&          // 1. Stable long enough
+              currentStableCount >= 1 && currentStableCount <= 7 &&        // 2. Within range 1-7
+              this._creakPlayedForCount !== currentStableCount)          // 3. Haven't played for this count yet
+          {
+              // Check rate limiting (less critical now, but acts as debounce)
+              const lastPlayTime = this._lastStrainSoundPlayTime['creak'] || 0;
+              if (currentTime - lastPlayTime > this.CREAK_SOUND_INTERVAL_MS) { 
+                  // Calculate detune based on count (1-7 maps to -600 to +600)
+                  const detune = -600 + (currentStableCount - 1) * 200;
+                  // Calculate volume based on count (optional, e.g., louder for higher counts)
+                  const volume = 0.4 + (currentStableCount / 7) * 0.4; // Range from 0.4 to 0.8
+
+                  console.log(`Playing creak sound for count ${currentStableCount}, detune: ${detune}, volume: ${volume.toFixed(2)}`);
+                  this.sound.play('creak', { 
+                      volume: Phaser.Math.Clamp(volume, 0, 1), // Ensure volume is valid
+                      detune: Math.round(detune) 
+                  });
+                  this._lastStrainSoundPlayTime['creak'] = currentTime; // Update last play time
+                  this._creakPlayedForCount = currentStableCount; // Mark this level as played
+              }
+          }
+      }
+      // --- End Creak Sound Logic ---
+
+      // --- Restored Sigh Sound Logic --- 
+      // Note: currentCount already defined as currentStableCount above
+      // const currentCount = this._currentDisplayedCeilingCount; // Use a local var for clarity
+      
+      // Set flag if count reaches the threshold (>= 2)
+      if (currentStableCount >= 2) {
+          this._hasReachedSighThreshold = true;
+          this._timeAtZeroStart = null; // Reset timer if count goes back up
+      }
+
+      // Check if count has dropped to 1 or 0 AFTER reaching the threshold
+      if (currentStableCount <= 1 && this._previousCeilingTouchCount >= 2 && this._hasReachedSighThreshold) {
+          // Start the timer if it hasn't started
           if (this._timeAtZeroStart === null) {
               this._timeAtZeroStart = currentTime;
           }
           // Check if enough time at low count has passed
-          if (currentTime - (this._timeAtZeroStart || 0) >= this.STRAIN_SOUND_INTERVAL) { // Using 5 sec interval
+          if (currentTime - (this._timeAtZeroStart || 0) >= this.STRAIN_SOUND_INTERVAL) { // Using original interval
               this.sound.play('sigh', { volume: 0.6 });
               this._hasReachedSighThreshold = false; // Reset flag after playing
               this._timeAtZeroStart = null; // Reset timer
           }
       } 
-      // Reset timer if count goes above 1 before sigh plays
-      else if (currentTouchCount > 1) { // CHANGED condition to > 1
+      // Reset timer if count goes back above 1 before sigh plays
+      else if (currentStableCount > 1) { 
           this._timeAtZeroStart = null;
       }
-      // --- End Sigh Sound Logic --- 
+      // --- End Sigh Sound Logic ---
 
-      // Store current count for the next frame
-      this._previousCeilingTouchCount = currentTouchCount;
-      // --- End Sound Playback Logic ---
+      // Update previous count for next frame's comparison
+      this._previousCeilingTouchCount = currentStableCount;
   }
 
   private _checkGameOverCondition() {
@@ -1219,6 +1232,9 @@ class Main extends Phaser.Scene {
       this.matter.world.on('collisionstart', this._handleCollisionStart, this);
       this.matter.world.on('collisionactive', this._handleCollisionActive, this);
       this.matter.world.on('collisionend', this._handleCollisionEnd, this);
+
+      // --- Add Pointer Up Listener (AFTER game objects are ready) ---
+      this.input.on('pointerup', this._handlePointerUp, this); 
 
       // --- Initial Game State ---
       this._initializeDropperState();
