@@ -4,8 +4,8 @@
 			"image": "pie_atlas.png",
 			"format": "RGBA8888",
 			"size": {
-				"w": 1536,
-				"h": 768
+				"w": 769,
+				"h": 1544
 			},
 			"scale": 1,
 			"frames": [
@@ -24,92 +24,8 @@
 						"h": 256
 					},
 					"frame": {
-						"x": 0,
-						"y": 0,
-						"w": 256,
-						"h": 256
-					}
-				},
-				{
-					"filename": "blueberry",
-					"rotated": false,
-					"trimmed": false,
-					"sourceSize": {
-						"w": 256,
-						"h": 256
-					},
-					"spriteSourceSize": {
-						"x": 0,
-						"y": 0,
-						"w": 256,
-						"h": 256
-					},
-					"frame": {
-						"x": 256,
-						"y": 0,
-						"w": 256,
-						"h": 256
-					}
-				},
-				{
-					"filename": "cherry_cross",
-					"rotated": false,
-					"trimmed": false,
-					"sourceSize": {
-						"w": 256,
-						"h": 256
-					},
-					"spriteSourceSize": {
-						"x": 0,
-						"y": 0,
-						"w": 256,
-						"h": 256
-					},
-					"frame": {
-						"x": 512,
-						"y": 0,
-						"w": 256,
-						"h": 256
-					}
-				},
-				{
-					"filename": "chicken",
-					"rotated": false,
-					"trimmed": false,
-					"sourceSize": {
-						"w": 256,
-						"h": 256
-					},
-					"spriteSourceSize": {
-						"x": 0,
-						"y": 0,
-						"w": 256,
-						"h": 256
-					},
-					"frame": {
-						"x": 768,
-						"y": 0,
-						"w": 256,
-						"h": 256
-					}
-				},
-				{
-					"filename": "chocolate_cream",
-					"rotated": false,
-					"trimmed": false,
-					"sourceSize": {
-						"w": 256,
-						"h": 256
-					},
-					"spriteSourceSize": {
-						"x": 0,
-						"y": 0,
-						"w": 256,
-						"h": 256
-					},
-					"frame": {
-						"x": 1024,
-						"y": 0,
+						"x": 1,
+						"y": 1,
 						"w": 256,
 						"h": 256
 					}
@@ -129,29 +45,8 @@
 						"h": 256
 					},
 					"frame": {
-						"x": 1280,
-						"y": 0,
-						"w": 256,
-						"h": 256
-					}
-				},
-				{
-					"filename": "key_lime",
-					"rotated": false,
-					"trimmed": false,
-					"sourceSize": {
-						"w": 256,
-						"h": 256
-					},
-					"spriteSourceSize": {
-						"x": 0,
-						"y": 0,
-						"w": 256,
-						"h": 256
-					},
-					"frame": {
-						"x": 0,
-						"y": 256,
+						"x": 1,
+						"y": 259,
 						"w": 256,
 						"h": 256
 					}
@@ -171,16 +66,37 @@
 						"h": 256
 					},
 					"frame": {
-						"x": 256,
-						"y": 256,
+						"x": 259,
+						"y": 1,
 						"w": 256,
 						"h": 256
 					}
 				},
 				{
-					"filename": "mince",
+					"filename": "blueberry",
 					"rotated": false,
-					"trimmed": false,
+					"trimmed": true,
+					"sourceSize": {
+						"w": 256,
+						"h": 256
+					},
+					"spriteSourceSize": {
+						"x": 0,
+						"y": 0,
+						"w": 255,
+						"h": 256
+					},
+					"frame": {
+						"x": 1,
+						"y": 517,
+						"w": 255,
+						"h": 256
+					}
+				},
+				{
+					"filename": "chicken",
+					"rotated": false,
+					"trimmed": true,
 					"sourceSize": {
 						"w": 256,
 						"h": 256
@@ -189,19 +105,19 @@
 						"x": 0,
 						"y": 0,
 						"w": 256,
-						"h": 256
+						"h": 255
 					},
 					"frame": {
-						"x": 512,
-						"y": 256,
+						"x": 259,
+						"y": 259,
 						"w": 256,
-						"h": 256
+						"h": 255
 					}
 				},
 				{
-					"filename": "oreo",
+					"filename": "chocolate_cream",
 					"rotated": false,
-					"trimmed": false,
+					"trimmed": true,
 					"sourceSize": {
 						"w": 256,
 						"h": 256
@@ -209,182 +125,266 @@
 					"spriteSourceSize": {
 						"x": 0,
 						"y": 0,
-						"w": 256,
+						"w": 255,
 						"h": 256
 					},
 					"frame": {
-						"x": 768,
-						"y": 256,
-						"w": 256,
-						"h": 256
-					}
-				},
-				{
-					"filename": "peach_tart",
-					"rotated": false,
-					"trimmed": false,
-					"sourceSize": {
-						"w": 256,
-						"h": 256
-					},
-					"spriteSourceSize": {
-						"x": 0,
-						"y": 0,
-						"w": 256,
-						"h": 256
-					},
-					"frame": {
-						"x": 1024,
-						"y": 256,
-						"w": 256,
-						"h": 256
-					}
-				},
-				{
-					"filename": "pecan",
-					"rotated": false,
-					"trimmed": false,
-					"sourceSize": {
-						"w": 256,
-						"h": 256
-					},
-					"spriteSourceSize": {
-						"x": 0,
-						"y": 0,
-						"w": 256,
-						"h": 256
-					},
-					"frame": {
-						"x": 1280,
-						"y": 256,
-						"w": 256,
+						"x": 1,
+						"y": 775,
+						"w": 255,
 						"h": 256
 					}
 				},
 				{
 					"filename": "pizza_pie",
 					"rotated": false,
-					"trimmed": false,
+					"trimmed": true,
 					"sourceSize": {
 						"w": 256,
 						"h": 256
 					},
 					"spriteSourceSize": {
-						"x": 0,
+						"x": 1,
 						"y": 0,
-						"w": 256,
+						"w": 255,
 						"h": 256
 					},
 					"frame": {
-						"x": 0,
-						"y": 512,
-						"w": 256,
+						"x": 1,
+						"y": 1033,
+						"w": 255,
 						"h": 256
 					}
 				},
 				{
 					"filename": "pumpkin",
 					"rotated": false,
-					"trimmed": false,
+					"trimmed": true,
 					"sourceSize": {
 						"w": 256,
 						"h": 256
 					},
 					"spriteSourceSize": {
 						"x": 0,
-						"y": 0,
+						"y": 3,
 						"w": 256,
-						"h": 256
+						"h": 252
 					},
 					"frame": {
-						"x": 256,
-						"y": 512,
+						"x": 1,
+						"y": 1291,
 						"w": 256,
-						"h": 256
+						"h": 252
 					}
 				},
 				{
-					"filename": "raspberry",
+					"filename": "tomato",
 					"rotated": false,
-					"trimmed": false,
+					"trimmed": true,
 					"sourceSize": {
 						"w": 256,
 						"h": 256
 					},
 					"spriteSourceSize": {
-						"x": 0,
+						"x": 2,
 						"y": 0,
-						"w": 256,
+						"w": 250,
 						"h": 256
 					},
 					"frame": {
-						"x": 512,
-						"y": 512,
-						"w": 256,
+						"x": 517,
+						"y": 1,
+						"w": 250,
 						"h": 256
 					}
 				},
 				{
 					"filename": "strawberry_rhubarb",
 					"rotated": false,
-					"trimmed": false,
+					"trimmed": true,
+					"sourceSize": {
+						"w": 256,
+						"h": 256
+					},
+					"spriteSourceSize": {
+						"x": 4,
+						"y": 1,
+						"w": 250,
+						"h": 254
+					},
+					"frame": {
+						"x": 517,
+						"y": 259,
+						"w": 250,
+						"h": 254
+					}
+				},
+				{
+					"filename": "cherry_cross",
+					"rotated": false,
+					"trimmed": true,
 					"sourceSize": {
 						"w": 256,
 						"h": 256
 					},
 					"spriteSourceSize": {
 						"x": 0,
-						"y": 0,
+						"y": 1,
+						"w": 256,
+						"h": 254
+					},
+					"frame": {
+						"x": 259,
+						"y": 516,
+						"w": 256,
+						"h": 254
+					}
+				},
+				{
+					"filename": "pecan",
+					"rotated": false,
+					"trimmed": true,
+					"sourceSize": {
 						"w": 256,
 						"h": 256
 					},
+					"spriteSourceSize": {
+						"x": 0,
+						"y": 1,
+						"w": 256,
+						"h": 254
+					},
 					"frame": {
-						"x": 768,
-						"y": 512,
+						"x": 258,
+						"y": 772,
+						"w": 256,
+						"h": 254
+					}
+				},
+				{
+					"filename": "key_lime",
+					"rotated": false,
+					"trimmed": true,
+					"sourceSize": {
 						"w": 256,
 						"h": 256
+					},
+					"spriteSourceSize": {
+						"x": 1,
+						"y": 1,
+						"w": 252,
+						"h": 254
+					},
+					"frame": {
+						"x": 516,
+						"y": 772,
+						"w": 252,
+						"h": 254
+					}
+				},
+				{
+					"filename": "raspberry",
+					"rotated": false,
+					"trimmed": true,
+					"sourceSize": {
+						"w": 256,
+						"h": 256
+					},
+					"spriteSourceSize": {
+						"x": 1,
+						"y": 1,
+						"w": 254,
+						"h": 255
+					},
+					"frame": {
+						"x": 258,
+						"y": 1028,
+						"w": 254,
+						"h": 255
 					}
 				},
 				{
 					"filename": "tollhouse",
 					"rotated": false,
-					"trimmed": false,
+					"trimmed": true,
 					"sourceSize": {
 						"w": 256,
 						"h": 256
 					},
 					"spriteSourceSize": {
-						"x": 0,
-						"y": 0,
-						"w": 256,
-						"h": 256
+						"x": 1,
+						"y": 1,
+						"w": 254,
+						"h": 255
 					},
 					"frame": {
-						"x": 1024,
-						"y": 512,
-						"w": 256,
-						"h": 256
+						"x": 514,
+						"y": 1028,
+						"w": 254,
+						"h": 255
 					}
 				},
 				{
-					"filename": "tomato",
+					"filename": "lemon_tart",
 					"rotated": false,
-					"trimmed": false,
+					"trimmed": true,
 					"sourceSize": {
 						"w": 256,
 						"h": 256
 					},
 					"spriteSourceSize": {
 						"x": 0,
-						"y": 0,
+						"y": 1,
+						"w": 254,
+						"h": 254
+					},
+					"frame": {
+						"x": 259,
+						"y": 1285,
+						"w": 254,
+						"h": 254
+					}
+				},
+				{
+					"filename": "oreo",
+					"rotated": false,
+					"trimmed": true,
+					"sourceSize": {
 						"w": 256,
 						"h": 256
 					},
+					"spriteSourceSize": {
+						"x": 0,
+						"y": 1,
+						"w": 253,
+						"h": 254
+					},
 					"frame": {
-						"x": 1280,
-						"y": 512,
+						"x": 515,
+						"y": 1285,
+						"w": 253,
+						"h": 254
+					}
+				},
+				{
+					"filename": "raspberry_mini",
+					"rotated": false,
+					"trimmed": true,
+					"sourceSize": {
 						"w": 256,
 						"h": 256
+					},
+					"spriteSourceSize": {
+						"x": 4,
+						"y": 3,
+						"w": 248,
+						"h": 250
+					},
+					"frame": {
+						"x": 517,
+						"y": 515,
+						"w": 248,
+						"h": 250
 					}
 				}
 			]
@@ -393,6 +393,6 @@
 	"meta": {
 		"app": "https://www.codeandweb.com/texturepacker",
 		"version": "3.0",
-		"smartupdate": "$TexturePacker:SmartUpdate:f624d2b25f5afe5b4b6cfdfe11af2935:a6474a218b4af7fbc485f54211df53ee:9af5dc0a32c06ed8e7a07d8fe4857d6f$"
+		"smartupdate": "$TexturePacker:SmartUpdate:68862d5b09486c2f55550e37f8847f4c:e7940e33594ff9e288948ab8352c159f:9af5dc0a32c06ed8e7a07d8fe4857d6f$"
 	}
 }
