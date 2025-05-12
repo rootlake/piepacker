@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { qrcode } from 'vite-plugin-qrcode';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ command, mode }) => {
@@ -7,12 +8,16 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     base: base,
+    plugins: [
+      qrcode()
+    ],
     build: {
       outDir: 'dist',
     },
     // Add server config if needed, e.g., for host or port
-    // server: {
+    server: {
+      host: true,
     //   port: 3000, 
-    // }
+    }
   }
 }); 
